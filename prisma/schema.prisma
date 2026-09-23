@@ -1,0 +1,276 @@
+// Home Services Platform — Prisma schema
+// Modular monolith on a single Postgres instance. Tables are grouped by
+// module (User, Professional, Booking, Payment, AMC, ...) with comments
+// marking ownership so a future extraction into its own service/schema
+// (see architecture doc: "Scaling: Monolith to Microservices") is mechanical.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Users module
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  CUSTOMER
+  PROFESSIONAL
+  ADMIN
+}
+
+model User {
+  id            String   @id @default(uuid())
+  name          String
+  phone         String?  @unique // set via phone/OTP signup, or added later during onboarding
+  email         String?  @unique // set via email/password signup
+  role          UserRole @default(CUSTOMER)
+  cityId        String?
+  address       String? // default address, captured during customer onboarding
+  passwordHash  String? // present only for email/password accounts; OTP-only accounts have none
+  isOnboarded   Boolean  @default(false) // true once the role-specific onboarding flow is completed
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  city          City?         @relation(fields: [cityId], references: [id])
+  professional  Professional?
+  bookings      Booking[]     @relation("CustomerBookings")
+  amcSubscriptions AMCSubscription[]
+  reviews       Review[]
+
+  @@index([cityId])
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Professionals module
+// ---------------------------------------------------------------------------
+
+enum KycStatus {
+  PENDING
+  IN_REVIEW
+  VERIFIED
+  REJECTED
+}
+
+model Professional {
+  id           String    @id @default(uuid())
+  userId       String    @unique
+  categories   String[] // ServiceCategory ids/slugs this professional serves
+  kycStatus    KycStatus @default(PENDING)
+  rating       Decimal   @default(0) @db.Decimal(3, 2)
+  homeZoneId   String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  homeZone Zone?      @relation(fields: [homeZoneId], references: [id])
+  bookings Booking[] @relation("ProfessionalBookings")
+
+  @@index([homeZoneId])
+  @@map("professionals")
+}
+
+// ---------------------------------------------------------------------------
+// Service catalogue
+// ---------------------------------------------------------------------------
+
+enum ServiceTier {
+  REPAIR
+  RENOVATION
+  RECURRING
+}
+
+model ServiceCategory {
+  id        String      @id @default(uuid())
+  name      String
+  tier      ServiceTier
+  basePrice Decimal     @db.Decimal(10, 2)
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  bookings Booking[]
+
+  @@map("service_categories")
+}
+
+// ---------------------------------------------------------------------------
+// Bookings / Dispatch module
+// ---------------------------------------------------------------------------
+
+enum BookingStatus {
+  PENDING
+  MATCHING
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Booking {
+  id             String        @id @default(uuid())
+  customerId     String
+  professionalId String?
+  categoryId     String
+  status         BookingStatus @default(PENDING)
+  scheduledAt    DateTime?
+  address        String
+  price          Decimal?      @db.Decimal(10, 2)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  customer     User             @relation("CustomerBookings", fields: [customerId], references: [id])
+  professional Professional?    @relation("ProfessionalBookings", fields: [professionalId], references: [id])
+  category     ServiceCategory  @relation(fields: [categoryId], references: [id])
+  payment      Payment?
+  review       Review?
+  partnerId    String?
+  partner      Partner?         @relation(fields: [partnerId], references: [id])
+
+  @@index([customerId])
+  @@index([professionalId])
+  @@index([status])
+  @@map("bookings")
+}
+
+// ---------------------------------------------------------------------------
+// AMC module
+// ---------------------------------------------------------------------------
+
+enum AMCStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+model AMCSubscription {
+  id           String    @id @default(uuid())
+  customerId   String
+  plan         String
+  startDate    DateTime
+  renewalDate  DateTime
+  status       AMCStatus @default(ACTIVE)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  customer User      @relation(fields: [customerId], references: [id])
+  payments Payment[]
+
+  @@index([customerId])
+  @@map("amc_subscriptions")
+}
+
+// ---------------------------------------------------------------------------
+// Payments module
+// ---------------------------------------------------------------------------
+
+enum PaymentStatus {
+  CREATED
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  bookingId         String?       @unique
+  subscriptionId    String?
+  amount            Decimal       @db.Decimal(10, 2)
+  method            String? // upi, card, netbanking, wallet...
+  gatewayRef        String? // razorpay order/payment id
+  status            PaymentStatus @default(CREATED)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  booking      Booking?         @relation(fields: [bookingId], references: [id])
+  subscription AMCSubscription? @relation(fields: [subscriptionId], references: [id])
+
+  @@index([subscriptionId])
+  @@map("payments")
+}
+
+// ---------------------------------------------------------------------------
+// Reviews module
+// ---------------------------------------------------------------------------
+
+model Review {
+  id        String   @id @default(uuid())
+  bookingId String   @unique
+  userId    String
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@map("reviews")
+}
+
+// ---------------------------------------------------------------------------
+// Zones module
+// ---------------------------------------------------------------------------
+
+enum CityTier {
+  TIER_1
+  TIER_2
+}
+
+model City {
+  id        String   @id @default(uuid())
+  name      String
+  tier      CityTier
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  zones     Zone[]
+  users     User[]
+  partners  Partner[]
+
+  @@map("cities")
+}
+
+model Zone {
+  id        String   @id @default(uuid())
+  cityId    String
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  city          City           @relation(fields: [cityId], references: [id])
+  professionals Professional[]
+
+  @@index([cityId])
+  @@map("zones")
+}
+
+// ---------------------------------------------------------------------------
+// Partners module
+// ---------------------------------------------------------------------------
+
+enum PartnerType {
+  BUILDER
+  RWA
+}
+
+model Partner {
+  id        String      @id @default(uuid())
+  type      PartnerType
+  name      String
+  cityId    String
+  contact   String?
+  createdAt DateTime    @default(now())
+
+  city     City      @relation(fields: [cityId], references: [id])
+  bookings Booking[]
+
+  @@index([cityId])
+  @@map("partners")
+}
