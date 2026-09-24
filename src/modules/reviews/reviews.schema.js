@@ -14,4 +14,10 @@ const listForProfessional = {
   query: paginationQuery,
 };
 
-module.exports = { createReview, listForProfessional };
+const listAll = {
+  query: paginationQuery.extend({
+    minRating: z.coerce.number().int().min(1).max(5).optional(),
+  }),
+};
+
+module.exports = { createReview, listForProfessional, listAll };

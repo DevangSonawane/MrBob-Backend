@@ -9,12 +9,14 @@ const createSubscription = {
   }),
 };
 
-const listMine = {
-  query: paginationQuery,
+const listSubscriptions = {
+  query: paginationQuery.extend({
+    status: z.enum(['ACTIVE', 'EXPIRED', 'CANCELLED']).optional(),
+  }),
 };
 
 const getSubscription = {
   params: z.object({ id: z.string().uuid() }),
 };
 
-module.exports = { createSubscription, listMine, getSubscription };
+module.exports = { createSubscription, listSubscriptions, getSubscription };

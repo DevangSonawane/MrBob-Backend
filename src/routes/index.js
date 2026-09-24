@@ -12,6 +12,7 @@ const amcRoutes = require('../modules/amc/amc.routes');
 const reviewsRoutes = require('../modules/reviews/reviews.routes');
 const zonesRoutes = require('../modules/zones/zones.routes');
 const partnersRoutes = require('../modules/partners/partners.routes');
+const dashboardRoutes = require('../modules/dashboard/dashboard.routes');
 
 const router = Router();
 
@@ -27,5 +28,6 @@ router.use('/amc', amcRoutes);
 router.use('/reviews', reviewsRoutes);
 router.use('/zones', zonesRoutes);
 router.use('/partners', partnersRoutes);
+router.use('/dashboard', dashboardRoutes);
 
 module.exports = router;

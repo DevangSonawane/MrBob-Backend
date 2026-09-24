@@ -11,4 +11,9 @@ const listForProfessional = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, ...result });
 });
 
-module.exports = { create, listForProfessional };
+const listAll = catchAsync(async (req, res) => {
+  const result = await service.listAll(req.query);
+  res.status(200).json({ success: true, ...result });
+});
+
+module.exports = { create, listForProfessional, listAll };

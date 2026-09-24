@@ -5,10 +5,18 @@ const { toSkipTake, paginatedResponse } = require('../../utils/pagination');
 const create = (customerId, data) =>
   prisma.aMCSubscription.create({ data: { customerId, ...data, status: 'ACTIVE' } });
 
-const listForCustomer = async (customerId, { page, limit }) => {
-  const where = { customerId };
+const list = async (user, { page, limit, status }) => {
+  const where = {
+    ...(status && { status }),
+    ...(user.role !== 'ADMIN' && { customerId: user.id }),
+  };
   const [items, total] = await Promise.all([
-    prisma.aMCSubscription.findMany({ where, ...toSkipTake({ page, limit }), orderBy: { createdAt: 'desc' } }),
+    prisma.aMCSubscription.findMany({
+      where,
+      ...toSkipTake({ page, limit }),
+      orderBy: { createdAt: 'desc' },
+      ...(user.role === 'ADMIN' && { include: { customer: { select: { id: true, name: true, phone: true, email: true } } } }),
+    }),
     prisma.aMCSubscription.count({ where }),
   ]);
   return paginatedResponse(items, total, { page, limit });
@@ -28,4 +36,4 @@ const cancel = async (id, user) => {
   return prisma.aMCSubscription.update({ where: { id: subscription.id }, data: { status: 'CANCELLED' } });
 };
 
-module.exports = { create, listForCustomer, getByIdForUser, cancel };
+module.exports = { create, list, getByIdForUser, cancel };

@@ -27,4 +27,13 @@ const setActive = {
   body: z.object({ isActive: z.boolean() }),
 };
 
-module.exports = { listUsers, getUser, updateMe, setActive };
+const createUser = {
+  body: z.object({
+    name: z.string().min(2),
+    email: z.string().email(),
+    role: z.enum(['CUSTOMER', 'PROFESSIONAL', 'ADMIN']).default('ADMIN'),
+    password: z.string().min(8).max(72).optional(), // omit to auto-generate a temp password
+  }),
+};
+
+module.exports = { listUsers, getUser, updateMe, setActive, createUser };

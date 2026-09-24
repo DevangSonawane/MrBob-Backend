@@ -19,15 +19,19 @@ const router = Router();
  *         description: Created subscription
  *   get:
  *     tags: [AMC]
- *     summary: List the current customer's AMC subscriptions
+ *     summary: List AMC subscriptions (own, for a customer; all, for an admin)
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [ACTIVE, EXPIRED, CANCELLED] }
  *     responses:
  *       200:
  *         description: Paginated list of subscriptions
  */
 router.post('/', authenticate, authorize('CUSTOMER'), validate(schema.createSubscription), controller.create);
-router.get('/', authenticate, authorize('CUSTOMER'), validate(schema.listMine), controller.listMine);
+router.get('/', authenticate, authorize('CUSTOMER', 'ADMIN'), validate(schema.listSubscriptions), controller.list);
 
 /**
  * @openapi

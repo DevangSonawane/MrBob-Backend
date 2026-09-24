@@ -22,4 +22,9 @@ const setActive = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: sanitizeUser(user) });
 });
 
-module.exports = { list, getById, updateMe, setActive };
+const create = catchAsync(async (req, res) => {
+  const { user, temporaryPassword } = await usersService.create(req.body);
+  res.status(201).json({ success: true, data: { user: sanitizeUser(user), temporaryPassword } });
+});
+
+module.exports = { list, getById, updateMe, setActive, create };

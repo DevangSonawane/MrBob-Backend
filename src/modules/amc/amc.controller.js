@@ -6,8 +6,8 @@ const create = catchAsync(async (req, res) => {
   res.status(201).json({ success: true, data: subscription });
 });
 
-const listMine = catchAsync(async (req, res) => {
-  const result = await service.listForCustomer(req.user.id, req.query);
+const list = catchAsync(async (req, res) => {
+  const result = await service.list(req.user, req.query);
   res.status(200).json({ success: true, ...result });
 });
 
@@ -21,4 +21,4 @@ const cancel = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: subscription });
 });
 
-module.exports = { create, listMine, getById, cancel };
+module.exports = { create, list, getById, cancel };

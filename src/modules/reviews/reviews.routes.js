@@ -22,6 +22,24 @@ router.post('/', authenticate, authorize('CUSTOMER'), validate(schema.createRevi
 
 /**
  * @openapi
+ * /reviews:
+ *   get:
+ *     tags: [Reviews]
+ *     summary: List all reviews (admin only)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: minRating
+ *         schema: { type: integer, minimum: 1, maximum: 5 }
+ *     responses:
+ *       200:
+ *         description: Paginated list of reviews
+ */
+router.get('/', authenticate, authorize('ADMIN'), validate(schema.listAll), controller.listAll);
+
+/**
+ * @openapi
  * /reviews/professional/{professionalId}:
  *   get:
  *     tags: [Reviews]

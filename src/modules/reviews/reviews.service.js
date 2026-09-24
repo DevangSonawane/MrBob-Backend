@@ -42,4 +42,26 @@ const listForProfessional = async (professionalId, { page, limit }) => {
   return paginatedResponse(items, total, { page, limit });
 };
 
-module.exports = { create, listForProfessional };
+const listAll = async ({ page, limit, minRating }) => {
+  const where = { ...(minRating && { rating: { gte: minRating } }) };
+  const [items, total] = await Promise.all([
+    prisma.review.findMany({
+      where,
+      ...toSkipTake({ page, limit }),
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { select: { id: true, name: true } },
+        booking: {
+          select: {
+            id: true,
+            professional: { select: { id: true, user: { select: { id: true, name: true } } } },
+          },
+        },
+      },
+    }),
+    prisma.review.count({ where }),
+  ]);
+  return paginatedResponse(items, total, { page, limit });
+};
+
+module.exports = { create, listForProfessional, listAll };
