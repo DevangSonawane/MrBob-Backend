@@ -18,8 +18,27 @@ const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
+// CORS_ORIGIN is a comma-separated list so multiple frontend apps (admin
+// dashboard, customer/professional web) can each run on their own local
+// port and still hit this API. '*' allows any origin — since credentials
+// are enabled, that has to be done by reflecting the request's actual
+// Origin header rather than the literal string "*" (the CORS spec forbids
+// combining a wildcard origin with credentialed requests).
+const allowedOrigins = env.CORS_ORIGIN.split(',').map((origin) => origin.trim());
+const allowAnyOrigin = allowedOrigins.includes('*');
+
 app.use(helmet());
-app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowAnyOrigin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`Origin ${origin} is not allowed by CORS`));
+    },
+    credentials: true,
+  }),
+);
 app.use(compression());
 app.use(pinoHttp({ logger }));
 
