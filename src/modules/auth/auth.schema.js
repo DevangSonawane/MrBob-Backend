@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { OTP_LENGTH } = require('./otp.store');
 
 const phoneSchema = z
   .string()
@@ -13,7 +14,7 @@ const requestOtp = {
 const verifyOtp = {
   body: z.object({
     phone: phoneSchema,
-    otp: z.string().length(6),
+    otp: z.string().regex(new RegExp(`^\\d{${OTP_LENGTH}}$`), `OTP must be ${OTP_LENGTH} digits`),
     name: z.string().min(2).optional(), // used to complete profile on first login
   }),
 };

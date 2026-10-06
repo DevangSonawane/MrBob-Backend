@@ -34,11 +34,11 @@ const envSchema = z.object({
   R2_BUCKET_NAME: z.string().optional(),
 
   // Temporary, while there is no SMS/WhatsApp provider: when set, every OTP is
-  // this fixed 6-digit code instead of a random one. Remove it once real
+  // this fixed 4-digit code instead of a random one. Remove it once real
   // delivery is in place — anyone who knows the code can sign in as any number.
   OTP_STATIC_CODE: z
     .string()
-    .regex(/^\d{6}$/, 'OTP_STATIC_CODE must be exactly 6 digits')
+    .regex(/^\d{4}$/, 'OTP_STATIC_CODE must be exactly 4 digits')
     .optional()
     .or(z.literal('').transform(() => undefined)),
 

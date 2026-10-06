@@ -24,7 +24,7 @@ module.exports = {
         tag: TAG,
         summary: 'Send a login OTP',
         description:
-          'Generates a 6-digit code valid for 5 minutes. In development without a WhatsApp token, the code is written to the server log. ' +
+          'Generates a 4-digit code valid for 5 minutes (5 wrong attempts discard it). In development without a WhatsApp token, the code is written to the server log. ' +
           'If the server has `OTP_STATIC_CODE` set (no SMS provider yet), the code is always that fixed value.',
         access: 'public',
         body: jsonBody({ type: 'object', required: ['phone'], properties: { phone } }, { phone: '+919812345678' }),
@@ -43,11 +43,11 @@ module.exports = {
             required: ['phone', 'otp'],
             properties: {
               phone,
-              otp: { type: 'string', minLength: 6, maxLength: 6, example: '482913' },
+              otp: { type: 'string', pattern: '^\\d{4}$', example: '4829' },
               name: { type: 'string', minLength: 2, description: 'Used as the display name when the account is created' },
             },
           },
-          { phone: '+919812345678', otp: '482913', name: 'Aarav Mehta' },
+          { phone: '+919812345678', otp: '4829', name: 'Aarav Mehta' },
         ),
         responses: { 200: ok('Signed in', session, sessionExample) },
         errors: [403],

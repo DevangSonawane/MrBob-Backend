@@ -83,7 +83,7 @@ module.exports = {
         tag: STEP_1,
         summary: 'Send an OTP to the vendor\'s phone',
         description:
-          'Generates a 6-digit code valid for 5 minutes and sends it over WhatsApp. Requesting again replaces the previous code.\n\n' +
+          'Generates a 4-digit code valid for 5 minutes and sends it over WhatsApp. Requesting again replaces the previous code.\n\n' +
           'In development, when no WhatsApp token is configured, the code is written to the server log instead of being sent.\n\n' +
           '**While no SMS provider is connected:** if the server has `OTP_STATIC_CODE` set, the code is always that fixed value.\n\n' +
           'Returns **403** if the number belongs to an admin account or a deactivated account.',
@@ -110,11 +110,11 @@ module.exports = {
           '- makes sure a `DRAFT` application exists;\n' +
           '- returns the access and refresh tokens **and** the application, so the app can route a returning vendor straight to where they left off ' +
           '(use `application.flow.currentStep` and `application.nextStep`).\n\n' +
-          'A code can be used once. Returns **400** for a wrong or expired code.',
+          'A code can be used once. Returns **400** for a wrong or expired code; after 5 wrong attempts the code is discarded and a new one must be requested.',
         access: 'public',
         body: jsonBody(
-          { type: 'object', required: ['phone', 'otp'], properties: { phone, otp: { type: 'string', pattern: '^\\d{6}$', example: '123456' } } },
-          { phone: '+919812345678', otp: '123456' },
+          { type: 'object', required: ['phone', 'otp'], properties: { phone, otp: { type: 'string', pattern: '^\\d{4}$', example: '1234' } } },
+          { phone: '+919812345678', otp: '1234' },
         ),
         responses: {
           200: ok('Signed in', ref('VendorSession'), {

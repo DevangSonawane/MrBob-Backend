@@ -1,6 +1,7 @@
 const { z } = require('zod');
 const { paginationQuery } = require('../../utils/pagination');
 const { commaList, dateOnly, sortOrder } = require('../../utils/queryFilters');
+const { OTP_LENGTH } = require('../auth/otp.store');
 
 const phoneSchema = z
   .string()
@@ -40,7 +41,7 @@ const requestOtp = {
 };
 
 const verifyOtp = {
-  body: z.object({ phone: phoneSchema, otp: z.string().regex(/^\d{6}$/, 'OTP must be 6 digits') }),
+  body: z.object({ phone: phoneSchema, otp: z.string().regex(new RegExp(`^\\d{${OTP_LENGTH}}$`), `OTP must be ${OTP_LENGTH} digits`) }),
 };
 
 const savePersonalDetails = {

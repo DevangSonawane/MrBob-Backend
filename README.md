@@ -126,13 +126,13 @@ pair. Send `Authorization: Bearer <accessToken>` on subsequent requests.
 
 **Phone + OTP** (no password):
 
-1. `POST /auth/otp/request { phone }` — generates a 6-digit OTP (5 min TTL). In dev, with no
+1. `POST /auth/otp/request { phone }` — generates a 4-digit OTP (5 min TTL, discarded after 5 wrong attempts). In dev, with no
    `WHATSAPP_API_TOKEN` set, the OTP is written to the server log instead of sent.
 2. `POST /auth/otp/verify { phone, otp, name? }` — verifies the OTP, creates the user on first
    login (role `CUSTOMER`).
 3. `POST /auth/refresh { refreshToken }` — rotates the token pair.
 
-**No SMS provider yet?** Set `OTP_STATIC_CODE` to a 6-digit value (e.g. `123456`) and every
+**No SMS provider yet?** Set `OTP_STATIC_CODE` to a 4-digit value (e.g. `1234`) and every
 OTP — customer and vendor — is that fixed code, so the apps can be built and tested end to
 end. The request step is still required before verify. Unset it once real delivery exists:
 while it is on, anyone who knows the code can sign in as any phone number.

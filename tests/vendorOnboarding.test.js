@@ -137,12 +137,12 @@ describe('Steps 1 & 2: phone number and OTP', () => {
     const res = await request(app).post(`${API}/vendor-onboarding/otp/request`).send({ phone });
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({ sent: true, expiresInSeconds: 300 });
-    expect(lastOtp()).toMatch(/^\d{6}$/);
+    expect(lastOtp()).toMatch(/^\d{4}$/);
     expect(JSON.stringify(res.body)).not.toContain(lastOtp());
   });
 
   it('rejects a wrong OTP without creating an account', async () => {
-    const wrong = lastOtp() === '000000' ? '111111' : '000000';
+    const wrong = lastOtp() === '0000' ? '1111' : '0000';
     const res = await request(app).post(`${API}/vendor-onboarding/otp/verify`).send({ phone, otp: wrong });
     expect(res.status).toBe(400);
     expect(await prisma.user.findUnique({ where: { phone } })).toBeNull();
