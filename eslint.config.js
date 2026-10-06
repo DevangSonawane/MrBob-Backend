@@ -15,6 +15,7 @@ module.exports = [
         __dirname: 'readonly',
         console: 'readonly',
         globalThis: 'readonly',
+        Buffer: 'readonly',
       },
     },
     rules: {
@@ -34,6 +35,7 @@ module.exports = [
         afterAll: 'readonly',
         beforeEach: 'readonly',
         afterEach: 'readonly',
+        jest: 'readonly',
       },
     },
   },

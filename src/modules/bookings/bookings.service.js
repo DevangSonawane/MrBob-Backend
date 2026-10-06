@@ -1,6 +1,7 @@
 const prisma = require('../../config/prisma');
 const ApiError = require('../../utils/ApiError');
 const { toSkipTake, paginatedResponse } = require('../../utils/pagination');
+const { isAdmin } = require('../../utils/roles');
 
 const ALLOWED_TRANSITIONS = {
   PENDING: ['MATCHING', 'CANCELLED'],
@@ -54,11 +55,24 @@ const listForUser = async (user, { page, limit, status }) => {
 const getByIdForUser = async (id, user) => {
   const booking = await prisma.booking.findUnique({
     where: { id },
-    include: { category: true, payment: true, professional: { include: { user: true } } },
+    include: {
+      category: true,
+      payment: true,
+      // Only what a booking screen needs — the professional row also holds
+      // personal onboarding details that must not reach customers.
+      professional: {
+        select: {
+          id: true,
+          userId: true,
+          rating: true,
+          user: { select: { id: true, name: true, phone: true } },
+        },
+      },
+    },
   });
   if (!booking) throw ApiError.notFound('Booking not found');
 
-  const isOwner = user.role === 'ADMIN' || booking.customerId === user.id || booking.professional?.userId === user.id;
+  const isOwner = isAdmin(user.role) || booking.customerId === user.id || booking.professional?.userId === user.id;
   if (!isOwner) throw ApiError.forbidden('You do not have access to this booking');
 
   return booking;

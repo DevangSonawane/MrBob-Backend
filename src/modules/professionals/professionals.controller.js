@@ -1,19 +1,21 @@
 const catchAsync = require('../../utils/catchAsync');
 const service = require('./professionals.service');
 
-const register = catchAsync(async (req, res) => {
-  const professional = await service.register(req.user.id, req.body);
-  res.status(201).json({ success: true, data: professional });
-});
-
 const list = catchAsync(async (req, res) => {
   const result = await service.list(req.query);
   res.status(200).json({ success: true, ...result });
 });
 
 const getById = catchAsync(async (req, res) => {
-  const professional = await service.getById(req.params.id);
+  const professional = await service.getById(req.params.id, req.user);
   res.status(200).json({ success: true, data: professional });
+});
+
+const getPhoto = catchAsync(async (req, res, next) => {
+  const photo = await service.getPhoto(req.params.id, req.user);
+  res.set({ 'Content-Type': photo.mimeType, 'Cache-Control': 'private, max-age=300' });
+  photo.stream.on('error', next);
+  photo.stream.pipe(res);
 });
 
 const getMe = catchAsync(async (req, res) => {
@@ -26,9 +28,4 @@ const updateMe = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: professional });
 });
 
-const updateKycStatus = catchAsync(async (req, res) => {
-  const professional = await service.updateKycStatus(req.params.id, req.body.kycStatus);
-  res.status(200).json({ success: true, data: professional });
-});
-
-module.exports = { register, list, getById, getMe, updateMe, updateKycStatus };
+module.exports = { list, getById, getPhoto, getMe, updateMe };

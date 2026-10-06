@@ -12,9 +12,4 @@ const completeCustomer = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: sanitizeUser(user) });
 });
 
-const completeProfessional = catchAsync(async (req, res) => {
-  const { user, professional } = await service.completeProfessionalOnboarding(req.user.id, req.body);
-  res.status(200).json({ success: true, data: { user: sanitizeUser(user), professional } });
-});
-
-module.exports = { getStatus, completeCustomer, completeProfessional };
+module.exports = { getStatus, completeCustomer };

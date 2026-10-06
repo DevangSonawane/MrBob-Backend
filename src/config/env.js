@@ -33,6 +33,24 @@ const envSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET_NAME: z.string().optional(),
 
+  // Temporary, while there is no SMS/WhatsApp provider: when set, every OTP is
+  // this fixed 6-digit code instead of a random one. Remove it once real
+  // delivery is in place — anyone who knows the code can sign in as any number.
+  OTP_STATIC_CODE: z
+    .string()
+    .regex(/^\d{6}$/, 'OTP_STATIC_CODE must be exactly 6 digits')
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
+
+  // KYC: 32-byte key (base64 or hex) for encrypting Aadhaar/PAN numbers at rest.
+  // Optional in dev/test (a fixed insecure key is used); required in production
+  // before any document can be saved — see utils/kycCrypto.js.
+  KYC_ENCRYPTION_KEY: z.string().optional(),
+  // Who verifies Aadhaar/PAN. 'manual' = an admin does it in the dashboard.
+  KYC_VERIFICATION_PROVIDER: z.enum(['manual']).default('manual'),
+  // Where uploaded documents go when R2 isn't configured (dev/test only).
+  UPLOAD_DIR: z.string().default('./uploads'),
+
   LOG_LEVEL: z.string().default('info'),
 });
 

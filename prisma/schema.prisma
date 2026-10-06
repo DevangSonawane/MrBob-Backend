@@ -21,27 +21,31 @@ enum UserRole {
   CUSTOMER
   PROFESSIONAL
   ADMIN
+  SUPER_ADMIN // everything ADMIN can do, plus final vendor approval and managing other admins
 }
 
 model User {
-  id            String   @id @default(uuid())
-  name          String
-  phone         String?  @unique // set via phone/OTP signup, or added later during onboarding
-  email         String?  @unique // set via email/password signup
-  role          UserRole @default(CUSTOMER)
-  cityId        String?
-  address       String? // default address, captured during customer onboarding
-  passwordHash  String? // present only for email/password accounts; OTP-only accounts have none
-  isOnboarded   Boolean  @default(false) // true once the role-specific onboarding flow is completed
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(uuid())
+  name         String
+  phone        String?  @unique // set via phone/OTP signup, or added later during onboarding
+  email        String?  @unique // set via email/password signup
+  role         UserRole @default(CUSTOMER)
+  cityId       String?
+  address      String? // default address, captured during customer onboarding
+  passwordHash String? // present only for email/password accounts; OTP-only accounts have none
+  isOnboarded  Boolean  @default(false) // true once the role-specific onboarding flow is completed
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  city          City?         @relation(fields: [cityId], references: [id])
-  professional  Professional?
-  bookings      Booking[]     @relation("CustomerBookings")
-  amcSubscriptions AMCSubscription[]
-  reviews       Review[]
+  city                  City?                   @relation(fields: [cityId], references: [id])
+  professional          Professional?
+  bookings              Booking[]               @relation("CustomerBookings")
+  amcSubscriptions      AMCSubscription[]
+  reviews               Review[]
+  reviewedProfessionals Professional[]          @relation("ProfessionalReviewer")
+  verifiedDocuments     ProfessionalDocument[]  @relation("DocumentVerifier")
+  onboardingEvents      VendorOnboardingEvent[] @relation("OnboardingEventActor")
 
   @@index([cityId])
   @@map("users")
@@ -58,22 +62,157 @@ enum KycStatus {
   REJECTED
 }
 
-model Professional {
-  id           String    @id @default(uuid())
-  userId       String    @unique
-  categories   String[] // ServiceCategory ids/slugs this professional serves
-  kycStatus    KycStatus @default(PENDING)
-  rating       Decimal   @default(0) @db.Decimal(3, 2)
-  homeZoneId   String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+// Where a vendor is in the onboarding flow. `kycStatus` above is kept in step
+// with this (see vendorOnboarding.service.js) because dispatch and the
+// dashboard only care about the coarse verified / not-verified answer.
+enum VendorOnboardingStatus {
+  DRAFT // vendor is still filling in the steps
+  SUBMITTED // waiting for Aadhaar/PAN verification
+  PENDING_APPROVAL // documents verified, waiting for a super admin
+  CHANGES_REQUESTED // sent back to the vendor to fix something and resubmit
+  APPROVED
+  REJECTED
+}
 
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  homeZone Zone?      @relation(fields: [homeZoneId], references: [id])
-  bookings Booking[] @relation("ProfessionalBookings")
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+model Professional {
+  id         String    @id @default(uuid())
+  userId     String    @unique
+  categories String[] // ServiceCategory ids this professional serves
+  kycStatus  KycStatus @default(PENDING)
+  rating     Decimal   @default(0) @db.Decimal(3, 2)
+  homeZoneId String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  // Onboarding: personal details (name, phone, email and city live on User)
+  onboardingStatus      VendorOnboardingStatus @default(DRAFT)
+  dateOfBirth           DateTime?              @db.Date
+  gender                Gender?
+  alternatePhone        String?
+  addressLine1          String?
+  addressLine2          String?
+  landmark              String?
+  pincode               String?
+  state                 String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  experienceYears       Int?
+
+  // Onboarding: face photo, shown to customers once the vendor is approved
+  profilePhotoKey  String?
+  profilePhotoMime String?
+
+  // Onboarding: review outcome
+  submittedAt  DateTime?
+  reviewedAt   DateTime? // when a super admin approved or rejected
+  reviewedById String?
+  reviewNote   String? // reason for rejection / requested changes, shown to the vendor
+
+  user             User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  homeZone         Zone?                   @relation(fields: [homeZoneId], references: [id])
+  reviewedBy       User?                   @relation("ProfessionalReviewer", fields: [reviewedById], references: [id])
+  bookings         Booking[]               @relation("ProfessionalBookings")
+  documents        ProfessionalDocument[]
+  onboardingEvents VendorOnboardingEvent[]
 
   @@index([homeZoneId])
+  @@index([onboardingStatus])
   @@map("professionals")
+}
+
+enum KycDocumentType {
+  AADHAAR
+  PAN
+  BANK_ACCOUNT // payout account; the "front" file is a cancelled cheque or passbook page
+}
+
+enum BankAccountType {
+  SAVINGS
+  CURRENT
+}
+
+enum KycDocumentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+// One row per document type per vendor (Aadhaar, PAN, payout bank account). The document number is never stored
+// in plaintext: `numberEncrypted` is AES-256-GCM (see utils/kycCrypto.js),
+// `numberHash` is a keyed hash used only to stop the same Aadhaar/PAN being
+// registered on two accounts, and `numberLast4` is what vendors are shown.
+model ProfessionalDocument {
+  id              String          @id @default(uuid())
+  professionalId  String
+  type            KycDocumentType
+  numberEncrypted String
+  numberHash      String
+  numberLast4     String
+  nameOnDocument  String?
+  frontFileKey    String
+  frontFileMime   String
+  backFileKey     String?
+  backFileMime    String?
+
+  // BANK_ACCOUNT only (number* above hold the account number, nameOnDocument the account holder)
+  ifsc        String?
+  bankName    String?
+  branchName  String?
+  accountType BankAccountType?
+  upiId       String?
+
+  status             KycDocumentStatus @default(PENDING)
+  rejectionReason    String?
+  // 'MANUAL' when an admin checked it; the provider's name once an automated check is wired in.
+  verificationSource String?
+  verificationRef    String? // provider's reference/transaction id, if any
+  verifiedById       String?
+  verifiedAt         DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  verifiedBy   User?        @relation("DocumentVerifier", fields: [verifiedById], references: [id])
+
+  @@unique([professionalId, type])
+  @@unique([type, numberHash])
+  @@map("professional_documents")
+}
+
+enum VendorOnboardingAction {
+  SUBMITTED
+  RESUBMITTED
+  DOCUMENT_VERIFIED
+  DOCUMENT_REJECTED
+  CHANGES_REQUESTED
+  APPROVED
+  REJECTED
+  REOPENED
+}
+
+// Append-only audit trail of everything that happened to an application.
+model VendorOnboardingEvent {
+  id             String                  @id @default(uuid())
+  professionalId String
+  actorId        String? // null when the system (e.g. an automated verification) did it
+  action         VendorOnboardingAction
+  documentType   KycDocumentType?
+  fromStatus     VendorOnboardingStatus?
+  toStatus       VendorOnboardingStatus?
+  note           String?
+  createdAt      DateTime                @default(now())
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  actor        User?        @relation("OnboardingEventActor", fields: [actorId], references: [id])
+
+  @@index([professionalId, createdAt])
+  @@map("vendor_onboarding_events")
 }
 
 // ---------------------------------------------------------------------------
@@ -125,13 +264,13 @@ model Booking {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  customer     User             @relation("CustomerBookings", fields: [customerId], references: [id])
-  professional Professional?    @relation("ProfessionalBookings", fields: [professionalId], references: [id])
-  category     ServiceCategory  @relation(fields: [categoryId], references: [id])
+  customer     User            @relation("CustomerBookings", fields: [customerId], references: [id])
+  professional Professional?   @relation("ProfessionalBookings", fields: [professionalId], references: [id])
+  category     ServiceCategory @relation(fields: [categoryId], references: [id])
   payment      Payment?
   review       Review?
   partnerId    String?
-  partner      Partner?         @relation(fields: [partnerId], references: [id])
+  partner      Partner?        @relation(fields: [partnerId], references: [id])
 
   @@index([customerId])
   @@index([professionalId])
@@ -150,14 +289,14 @@ enum AMCStatus {
 }
 
 model AMCSubscription {
-  id           String    @id @default(uuid())
-  customerId   String
-  plan         String
-  startDate    DateTime
-  renewalDate  DateTime
-  status       AMCStatus @default(ACTIVE)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id          String    @id @default(uuid())
+  customerId  String
+  plan        String
+  startDate   DateTime
+  renewalDate DateTime
+  status      AMCStatus @default(ACTIVE)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   customer User      @relation(fields: [customerId], references: [id])
   payments Payment[]
@@ -179,15 +318,15 @@ enum PaymentStatus {
 }
 
 model Payment {
-  id                String        @id @default(uuid())
-  bookingId         String?       @unique
-  subscriptionId    String?
-  amount            Decimal       @db.Decimal(10, 2)
-  method            String? // upi, card, netbanking, wallet...
-  gatewayRef        String? // razorpay order/payment id
-  status            PaymentStatus @default(CREATED)
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  id             String        @id @default(uuid())
+  bookingId      String?       @unique
+  subscriptionId String?
+  amount         Decimal       @db.Decimal(10, 2)
+  method         String? // upi, card, netbanking, wallet...
+  gatewayRef     String? // razorpay order/payment id
+  status         PaymentStatus @default(CREATED)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   booking      Booking?         @relation(fields: [bookingId], references: [id])
   subscription AMCSubscription? @relation(fields: [subscriptionId], references: [id])
@@ -230,9 +369,9 @@ model City {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  zones     Zone[]
-  users     User[]
-  partners  Partner[]
+  zones    Zone[]
+  users    User[]
+  partners Partner[]
 
   @@map("cities")
 }

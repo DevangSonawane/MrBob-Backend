@@ -1,6 +1,5 @@
 const prisma = require('../../config/prisma');
 const ApiError = require('../../utils/ApiError');
-const professionalsService = require('../professionals/professionals.service');
 
 const getStatus = async (userId) => {
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { professional: true } });
@@ -10,6 +9,8 @@ const getStatus = async (userId) => {
     isOnboarded: user.isOnboarded,
     role: user.role,
     hasProfessionalProfile: Boolean(user.professional),
+    // Where a vendor is in /vendor-onboarding; null for accounts that never started it.
+    vendorOnboardingStatus: user.professional?.onboardingStatus ?? null,
   };
 };
 
@@ -42,24 +43,4 @@ const completeCustomerOnboarding = async (userId, { name, phone, cityId, address
   });
 };
 
-const completeProfessionalOnboarding = async (userId, { name, phone, cityId, categories, homeZoneId }) => {
-  await assertCityExists(cityId);
-  await assertPhoneAvailable(userId, phone);
-
-  // Creates the Professional profile and flips the user's role to PROFESSIONAL.
-  const professional = await professionalsService.register(userId, { categories, homeZoneId });
-
-  const user = await prisma.user.update({
-    where: { id: userId },
-    data: {
-      ...(name && { name }),
-      ...(phone && { phone }),
-      cityId,
-      isOnboarded: true,
-    },
-  });
-
-  return { user, professional };
-};
-
-module.exports = { getStatus, completeCustomerOnboarding, completeProfessionalOnboarding };
+module.exports = { getStatus, completeCustomerOnboarding };

@@ -1,19 +1,8 @@
 const prisma = require('../../config/prisma');
 const ApiError = require('../../utils/ApiError');
 const { toSkipTake, paginatedResponse } = require('../../utils/pagination');
-
-const register = async (userId, { categories, homeZoneId }) => {
-  const existing = await prisma.professional.findUnique({ where: { userId } });
-  if (existing) throw ApiError.conflict('This user is already registered as a professional');
-
-  return prisma.$transaction(async (tx) => {
-    const professional = await tx.professional.create({
-      data: { userId, categories, homeZoneId },
-    });
-    await tx.user.update({ where: { id: userId }, data: { role: 'PROFESSIONAL' } });
-    return professional;
-  });
-};
+const { isAdmin } = require('../../utils/roles');
+const storage = require('../storage/storage.service');
 
 const list = async ({ page, limit, kycStatus, category, zoneId }) => {
   const where = {
@@ -33,13 +22,35 @@ const list = async ({ page, limit, kycStatus, category, zoneId }) => {
   return paginatedResponse(items, total, { page, limit });
 };
 
-const getById = async (id) => {
+// The professional row holds personal onboarding details (date of birth,
+// address, emergency contact). Only admins and the professional themselves
+// see those; any other signed-in user gets the public profile.
+const getById = async (id, requester) => {
   const professional = await prisma.professional.findUnique({
     where: { id },
     include: { user: { select: { id: true, name: true, phone: true } }, homeZone: true },
   });
   if (!professional) throw ApiError.notFound('Professional not found');
-  return professional;
+  if (isAdmin(requester.role) || professional.userId === requester.id) return professional;
+
+  return {
+    id: professional.id,
+    categories: professional.categories,
+    kycStatus: professional.kycStatus,
+    rating: professional.rating,
+    homeZone: professional.homeZone,
+    photo: professional.onboardingStatus === 'APPROVED' && professional.profilePhotoKey ? `/professionals/${professional.id}/photo` : null,
+    user: { id: professional.user.id, name: professional.user.name },
+  };
+};
+
+// Customers see a professional's face only once they have been approved;
+// before that the photo is visible through the onboarding endpoints only.
+const getPhoto = async (id, requester) => {
+  const professional = await prisma.professional.findUnique({ where: { id } });
+  const canSee = professional && (professional.onboardingStatus === 'APPROVED' || isAdmin(requester.role) || professional.userId === requester.id);
+  if (!canSee || !professional.profilePhotoKey) throw ApiError.notFound('Photo not found');
+  return { stream: await storage.getStream(professional.profilePhotoKey), mimeType: professional.profilePhotoMime };
 };
 
 const getByUserId = async (userId) => {
@@ -53,9 +64,4 @@ const update = async (userId, data) => {
   return prisma.professional.update({ where: { id: professional.id }, data });
 };
 
-const updateKycStatus = async (id, kycStatus) => {
-  await getById(id);
-  return prisma.professional.update({ where: { id }, data: { kycStatus } });
-};
-
-module.exports = { register, list, getById, getByUserId, update, updateKycStatus };
+module.exports = { list, getById, getPhoto, getByUserId, update };

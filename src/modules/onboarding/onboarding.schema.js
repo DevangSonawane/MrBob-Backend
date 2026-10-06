@@ -13,14 +13,4 @@ const completeCustomer = {
   }),
 };
 
-const completeProfessional = {
-  body: z.object({
-    name: z.string().min(2).optional(),
-    phone: phoneSchema.optional(),
-    cityId: z.string().uuid(),
-    categories: z.array(z.string()).min(1),
-    homeZoneId: z.string().uuid().optional(),
-  }),
-};
-
-module.exports = { completeCustomer, completeProfessional };
+module.exports = { completeCustomer };

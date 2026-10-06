@@ -7,24 +7,6 @@ const schema = require('./categories.schema');
 
 const router = Router();
 
-/**
- * @openapi
- * /categories:
- *   get:
- *     tags: [Service Categories]
- *     summary: List active service categories
- *     responses:
- *       200:
- *         description: List of service categories
- *   post:
- *     tags: [Service Categories]
- *     summary: Create a service category (admin only)
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       201:
- *         description: Created category
- */
 router.get(
   '/',
   catchAsync(async (req, res) => {

@@ -1,6 +1,7 @@
 const prisma = require('../../config/prisma');
 const ApiError = require('../../utils/ApiError');
 const { toSkipTake, paginatedResponse } = require('../../utils/pagination');
+const { isAdmin } = require('../../utils/roles');
 
 const create = (customerId, data) =>
   prisma.aMCSubscription.create({ data: { customerId, ...data, status: 'ACTIVE' } });
@@ -8,14 +9,14 @@ const create = (customerId, data) =>
 const list = async (user, { page, limit, status }) => {
   const where = {
     ...(status && { status }),
-    ...(user.role !== 'ADMIN' && { customerId: user.id }),
+    ...(!isAdmin(user.role) && { customerId: user.id }),
   };
   const [items, total] = await Promise.all([
     prisma.aMCSubscription.findMany({
       where,
       ...toSkipTake({ page, limit }),
       orderBy: { createdAt: 'desc' },
-      ...(user.role === 'ADMIN' && { include: { customer: { select: { id: true, name: true, phone: true, email: true } } } }),
+      ...(isAdmin(user.role) && { include: { customer: { select: { id: true, name: true, phone: true, email: true } } } }),
     }),
     prisma.aMCSubscription.count({ where }),
   ]);
@@ -25,7 +26,7 @@ const list = async (user, { page, limit, status }) => {
 const getByIdForUser = async (id, user) => {
   const subscription = await prisma.aMCSubscription.findUnique({ where: { id } });
   if (!subscription) throw ApiError.notFound('Subscription not found');
-  if (user.role !== 'ADMIN' && subscription.customerId !== user.id) {
+  if (!isAdmin(user.role) && subscription.customerId !== user.id) {
     throw ApiError.forbidden('You do not have access to this subscription');
   }
   return subscription;

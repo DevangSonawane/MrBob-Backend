@@ -59,7 +59,17 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', env: env.NODE_ENV, timestamp: new Date().toISOString() });
 });
 
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+// Section descriptions go on their own line under the section title, so
+// they stay readable on narrow screens instead of being squeezed beside it.
+const swaggerCss = `
+  .swagger-ui .opblock-tag { flex-wrap: wrap; }
+  .swagger-ui .opblock-tag small { flex: 1 1 100%; order: 3; padding: 6px 0 0; }
+`;
+app.use(
+  '/api-docs',
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, { customCss: swaggerCss, customSiteTitle: 'Home Services API', swaggerOptions: { persistAuthorization: true } }),
+);
 app.get('/api-docs.json', (req, res) => res.json(swaggerSpec));
 
 app.use(env.API_BASE_PATH, routes);

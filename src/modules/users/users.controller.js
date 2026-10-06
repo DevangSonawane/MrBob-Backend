@@ -7,8 +7,12 @@ const list = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, ...result, items: result.items.map(sanitizeUser) });
 });
 
+const getSummary = catchAsync(async (req, res) => {
+  res.status(200).json({ success: true, data: await usersService.getSummary() });
+});
+
 const getById = catchAsync(async (req, res) => {
-  const user = await usersService.getById(req.params.id);
+  const user = await usersService.getDetail(req.params.id);
   res.status(200).json({ success: true, data: sanitizeUser(user) });
 });
 
@@ -18,13 +22,13 @@ const updateMe = catchAsync(async (req, res) => {
 });
 
 const setActive = catchAsync(async (req, res) => {
-  const user = await usersService.setActive(req.params.id, req.body.isActive);
+  const user = await usersService.setActive(req.params.id, req.body.isActive, req.user);
   res.status(200).json({ success: true, data: sanitizeUser(user) });
 });
 
 const create = catchAsync(async (req, res) => {
-  const { user, temporaryPassword } = await usersService.create(req.body);
+  const { user, temporaryPassword } = await usersService.create(req.body, req.user);
   res.status(201).json({ success: true, data: { user: sanitizeUser(user), temporaryPassword } });
 });
 
-module.exports = { list, getById, updateMe, setActive, create };
+module.exports = { list, getSummary, getById, updateMe, setActive, create };

@@ -24,13 +24,15 @@ async function main() {
     }
   }
 
+  // The bootstrap account is a super admin: it gives final approval on vendor
+  // onboarding and is the only role that can create other super admins.
   const admin = await prisma.user.upsert({
     where: { phone: '+919999999999' },
-    update: {},
+    update: { role: 'SUPER_ADMIN' },
     create: {
       phone: '+919999999999',
       name: 'Platform Admin',
-      role: 'ADMIN',
+      role: 'SUPER_ADMIN',
       cityId: city.id,
     },
   });
