@@ -36,7 +36,9 @@ module.exports = {
       '**Super admin panel** — the section after those gathers what the super admin dashboard uses: vendors by status, the final decision, and all users.',
     ].join('\n'),
   },
-  servers: [{ url: `http://localhost:${env.PORT}${env.API_BASE_PATH}`, description: 'Local' }],
+  // Relative, so "Try it out" always calls the server the docs were loaded
+  // from — localhost in development, the real host once deployed.
+  servers: [{ url: env.API_BASE_PATH, description: 'This server' }],
   tags: sections.flatMap((section) => section.tags),
   paths: Object.assign({}, ...sections.map((section) => section.paths)),
   components: {

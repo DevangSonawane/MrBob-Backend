@@ -58,6 +58,11 @@ describe('API documentation', () => {
     });
   });
 
+  it('points "Try it out" at whichever host serves the docs, never a hardcoded one', () => {
+    expect(spec.servers).toEqual([{ url: '/api/v1', description: 'This server' }]);
+    expect(JSON.stringify(spec.servers)).not.toContain('localhost');
+  });
+
   it('lists the vendor onboarding steps first and in order', () => {
     expect(spec.tags.slice(0, 5).map((tag) => tag.name)).toEqual([
       'Vendor onboarding · Step 1 – Phone number',
