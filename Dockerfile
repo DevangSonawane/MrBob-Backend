@@ -19,4 +19,7 @@ COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/src ./src
 
 EXPOSE 4000
-CMD ["sh", "-c", "npx prisma migrate deploy && node src/server.js"]
+# The seed is idempotent. It runs on start only when dashboard credentials are
+# configured, so setting SEED_SUPER_ADMIN_EMAIL / SEED_SUPER_ADMIN_PASSWORD on the
+# host is enough to create (or change) the super admin login — no shell needed.
+CMD ["sh", "-c", "npx prisma migrate deploy && { [ -z \"$SEED_SUPER_ADMIN_EMAIL\" ] || node src/db/seed/index.js || echo 'Seed failed; starting anyway'; } && node src/server.js"]
