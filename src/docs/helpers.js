@@ -35,8 +35,18 @@ const fileResponse = (description, types = ['image/jpeg', 'image/png', 'image/we
 });
 
 // Request bodies
-const jsonBody = (schema, example) => ({ required: true, content: jsonContent(schema, example) });
-const multipartBody = (schema) => ({ required: true, content: { 'multipart/form-data': { schema } } });
+// A schema built with requiredWhenStrict() while validation is off carries an
+// empty `required` list: nothing in it is mandatory, so neither is the body.
+const bodyParts = ({ required, ...schema }) =>
+  required && required.length === 0 ? { required: false, schema } : { required: true, schema: required ? { required, ...schema } : schema };
+const jsonBody = (body, example) => {
+  const { required, schema } = bodyParts(body);
+  return { required, content: jsonContent(schema, example) };
+};
+const multipartBody = (body) => {
+  const { required, schema } = bodyParts(body);
+  return { required, content: { 'multipart/form-data': { schema } } };
+};
 
 // Parameters
 const UUID = { type: 'string', format: 'uuid' };
@@ -97,6 +107,6 @@ const op = ({ tag, summary, description = '', access = 'user', params = [], body
 };
 
 // Onboarding request bodies only have mandatory fields when validation is on.
-const requiredWhenStrict = (fields) => (relaxed ? {} : { required: fields });
+const requiredWhenStrict = (fields) => ({ required: relaxed ? [] : fields });
 
 module.exports = { requiredWhenStrict, ref, arrayOf, envelope, ok, paginated, fileResponse, jsonBody, multipartBody, pathParam, queryParam, dateParam, sortParams, pageParams, op, UUID };
