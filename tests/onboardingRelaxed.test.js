@@ -176,7 +176,7 @@ describe('Vendor onboarding with validation off', () => {
     expect(submitted.body.data.detailSteps.some((step) => !step.complete)).toBe(true);
   });
 
-  it('submits, locks, and can still be verified and approved', async () => {
+  it('submits, locks, and can be approved without waiting for every document', async () => {
     const submitted = await request(app).post(`${API}/vendor-onboarding/submit`).set(vendor.auth);
     expect(submitted.status).toBe(200);
     const id = submitted.body.data.id;
@@ -184,13 +184,13 @@ describe('Vendor onboarding with validation off', () => {
     expect((await put(vendor.auth, 'services', {})).status).toBe(409);
 
     const review = (action, body) => request(app).post(`${API}/vendor-onboarding/applications/${id}/${action}`).set(superAdmin.auth).send(body);
-    expect((await review('approve')).status).toBe(409); // documents first
     await review('documents/aadhaar/verify');
-    await review('documents/pan/verify');
-    const ready = await review('documents/bank_account/verify');
-    expect(ready.body.data.status).toBe('PENDING_APPROVAL');
+    // A super admin need not wait for the remaining documents.
     const approved = await review('approve');
+    expect(approved.status).toBe(200);
     expect(approved.body.data.status).toBe('APPROVED');
+    expect(approved.body.data.events.some((event) => event.action === 'APPROVED' && /before verification/.test(event.note))).toBe(true);
+    expect((await review('approve')).status).toBe(409); // already decided
 
     const status = await request(app).get(`${API}/vendor-onboarding/status`).set(vendor.auth);
     expect(status.body.data.flow).toMatchObject({ currentStep: 5, isVerified: true });

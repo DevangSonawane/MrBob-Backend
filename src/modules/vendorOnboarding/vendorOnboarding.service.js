@@ -891,12 +891,19 @@ const transition = async (id, { from, to, action, actorId, note = null, data = {
   return application;
 };
 
+// With validation off a super admin may approve at any point before a final
+// decision — even a vendor who has filled in nothing — so onboarding is never
+// blocked on missing details. The audit trail records that it was early.
+const APPROVABLE_STATUSES = relaxed ? ['PENDING_APPROVAL', 'SUBMITTED', 'CHANGES_REQUESTED', 'DRAFT'] : ['PENDING_APPROVAL'];
+
 const approve = async (id, actor) => {
+  const { onboardingStatus } = await loadById(id);
   const application = await transition(id, {
-    from: ['PENDING_APPROVAL'],
+    from: APPROVABLE_STATUSES,
     to: 'APPROVED',
     action: 'APPROVED',
     actorId: actor.id,
+    note: onboardingStatus === 'PENDING_APPROVAL' ? null : 'Approved before verification was complete',
     data: { reviewedAt: new Date(), reviewedById: actor.id, reviewNote: null },
     extra: (tx, app) => tx.user.update({ where: { id: app.userId }, data: { isOnboarded: true } }),
   });

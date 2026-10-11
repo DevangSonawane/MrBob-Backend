@@ -462,7 +462,9 @@ module.exports = {
         tag: [STEP_4, SUPER_ADMIN],
         summary: 'Approve the vendor (final step)',
         description:
-          'Only from `PENDING_APPROVAL` — i.e. after the Aadhaar, PAN and bank account are verified.\n\n' +
+          'Normally only from `PENDING_APPROVAL` — i.e. after the Aadhaar, PAN and bank account are verified. While onboarding validation ' +
+          'is switched off, a super admin may also approve from `DRAFT`, `SUBMITTED` or `CHANGES_REQUESTED`, even if the vendor has not ' +
+          'filled in their details; the history then notes that it was approved before verification was complete.\n\n' +
           'The vendor becomes `APPROVED`: their `kycStatus` is set to `VERIFIED` (which is what dispatch checks before assigning jobs), ' +
           '`isOnboarded` becomes true, and they are notified. This takes the vendor to step 5.',
         access: 'SUPER_ADMIN',
