@@ -18,4 +18,6 @@ const listZones = {
   query: z.object({ cityId: z.string().uuid().optional() }),
 };
 
-module.exports = { createCity, createZone, listZones };
+const byId = { params: z.object({ id: z.string().uuid() }) };
+
+module.exports = { byId, createCity, createZone, listZones };

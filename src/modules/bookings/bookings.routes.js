@@ -16,6 +16,7 @@ router.post('/', authenticate, authorize('CUSTOMER'), validate(schema.createBook
 router.get('/', authenticate, validate(schema.listBookings), controller.list);
 router.get('/summary', authenticate, authorize('ADMIN'), controller.getSummary);
 router.get('/:id', authenticate, validate(schema.getBooking), controller.getById);
+router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), validate(schema.getBooking), controller.remove);
 
 // Payment
 router.post('/:id/payment/confirm', authenticate, authorize('CUSTOMER'), validate(schema.confirmPayment), controller.confirmPayment);

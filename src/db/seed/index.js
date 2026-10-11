@@ -35,10 +35,17 @@ async function main() {
     { name: 'Electrician', tier: 'REPAIR', basePrice: 299 },
     { name: 'Plumber', tier: 'REPAIR', basePrice: 349 },
     { name: 'AC Repair', tier: 'REPAIR', basePrice: 499 },
+    { name: 'Carpenter', tier: 'REPAIR', basePrice: 349 },
+    { name: 'Appliance Repair', tier: 'REPAIR', basePrice: 399 },
+    { name: 'Painting', tier: 'RENOVATION', basePrice: 1999 },
+    { name: 'Home Cleaning', tier: 'RECURRING', basePrice: 599 },
+    { name: 'Pest Control', tier: 'RECURRING', basePrice: 799 },
+    { name: 'Water Purifier Service', tier: 'RECURRING', basePrice: 449 },
   ];
 
   for (const category of categories) {
-    const existing = await prisma.serviceCategory.findFirst({ where: { name: category.name } });
+    // Includes ones an admin has since removed, so the seed never brings those back.
+    const existing = await prisma.serviceCategory.findFirst({ where: { name: { equals: category.name, mode: 'insensitive' } } });
     if (!existing) {
       await prisma.serviceCategory.create({ data: category });
     }

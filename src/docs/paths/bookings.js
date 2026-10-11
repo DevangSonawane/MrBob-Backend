@@ -60,6 +60,20 @@ module.exports = {
       }),
     },
 
+    '/categories/{id}': {
+      delete: op({
+        tag: CATEGORIES,
+        summary: 'Remove a service category',
+        description:
+          'Takes the category out of the catalogue: it no longer appears in `GET /categories` and cannot be booked. Past bookings keep it. ' +
+          'Creating a category with the same name later brings it back.',
+        access: 'ADMIN',
+        params: [pathParam('id', 'Category id')],
+        responses: { 200: ok('Removed', { type: 'object', properties: { deleted: { type: 'boolean', example: true }, name: { type: 'string' } } }) },
+        errors: [404],
+      }),
+    },
+
     '/categories/{id}/image': {
       get: op({
         tag: CATEGORIES,
@@ -203,6 +217,17 @@ module.exports = {
         params: [bookingId],
         responses: { 200: ok('The booking', booking, examples.booking('assigned', 'admin')) },
         errors: [403, 404],
+      }),
+      delete: op({
+        tag: [ADMIN, SUPER_ADMIN],
+        summary: 'Delete a booking',
+        description:
+          'Permanently removes the booking with its timeline, payment record and review. Returns **409** while a professional is on the job ' +
+          '(`ASSIGNED` or `IN_PROGRESS`) or while a refund is still owed — complete, cancel or mark it refunded first.',
+        access: 'SUPER_ADMIN',
+        params: [bookingId],
+        responses: { 200: ok('Deleted', { type: 'object', properties: { deleted: { type: 'boolean', example: true }, bookingNumber: { type: 'string', example: 'BK-000123' } } }) },
+        errors: [404, 409],
       }),
     },
 

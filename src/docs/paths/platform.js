@@ -1,4 +1,4 @@
-const { ref, arrayOf, ok, paginated, jsonBody, queryParam, pageParams, op } = require('../helpers');
+const { ref, arrayOf, ok, paginated, jsonBody, pathParam, queryParam, pageParams, op } = require('../helpers');
 
 const ZONES = 'Cities & zones';
 const PARTNERS = 'Partners';
@@ -24,6 +24,30 @@ module.exports = {
         ),
         responses: { 201: ok('City created', ref('City')) },
         errors: [409],
+      }),
+    },
+    '/zones/cities/{id}': {
+      delete: op({
+        tag: ZONES,
+        summary: 'Remove a city',
+        description:
+          'Takes the city and all its zones out of service: they no longer appear in the lists. Existing users, addresses and bookings keep them. ' +
+          'Creating a city with the same name later brings it back (its zones are added back one by one).',
+        access: 'ADMIN',
+        params: [pathParam('id', 'City id')],
+        responses: { 200: ok('Removed', { type: 'object', properties: { deleted: { type: 'boolean', example: true }, name: { type: 'string' } } }) },
+        errors: [404],
+      }),
+    },
+    '/zones/{id}': {
+      delete: op({
+        tag: ZONES,
+        summary: 'Remove a zone',
+        description: 'Takes the zone out of service: it no longer appears in `GET /zones`. Existing addresses and bookings keep it.',
+        access: 'ADMIN',
+        params: [pathParam('id', 'Zone id')],
+        responses: { 200: ok('Removed', { type: 'object', properties: { deleted: { type: 'boolean', example: true }, name: { type: 'string' } } }) },
+        errors: [404],
       }),
     },
     '/zones': {

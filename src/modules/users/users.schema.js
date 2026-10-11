@@ -111,6 +111,23 @@ const adminUpdate = {
   ),
 };
 
+// Every field optional; null (or an empty string) clears it.
+const part = (max) => z.string().trim().max(max).nullable().optional();
+const setLocation = {
+  params: userId,
+  body: nonEmpty(
+    z.object({
+      addressLine1: part(200),
+      addressLine2: part(200),
+      landmark: part(200),
+      state: part(60),
+      pincode: part(10),
+      cityId: z.uuid().nullable().optional(),
+      zoneId: z.uuid().nullable().optional(),
+    }),
+  ),
+};
+
 const createUser = {
   body: z.object({
     name: z.string().min(2),
@@ -132,5 +149,6 @@ module.exports = {
   getUser,
   setActive,
   adminUpdate,
+  setLocation,
   createUser,
 };

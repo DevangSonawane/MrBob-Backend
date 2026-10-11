@@ -39,8 +39,11 @@ const create = async (data, files) => {
   const image = imageFrom(files);
   const name = data.name.trim();
   const existing = await prisma.serviceCategory.findFirst({ where: { name: { equals: name, mode: 'insensitive' } } });
-  if (existing) throw ApiError.conflict(`${existing.name} already exists`);
-  const category = await prisma.serviceCategory.create({ data: { ...data, name } });
+  if (existing?.isActive) throw ApiError.conflict(`${existing.name} already exists`);
+  // A removed category with this name is brought back with the new details.
+  const category = existing
+    ? await prisma.serviceCategory.update({ where: { id: existing.id }, data: { ...data, name, isActive: true } })
+    : await prisma.serviceCategory.create({ data: { ...data, name } });
   return toView(image ? await storeImage(category, image) : category);
 };
 
@@ -59,10 +62,19 @@ const removeImage = async (id) => {
   return toView(updated);
 };
 
+// Removes a category from the catalogue. The row is kept, switched off, so
+// past bookings still know what they were for; it disappears from every list.
+// Creating a category with the same name later brings it back.
+const remove = async (id) => {
+  const category = await find(id);
+  await prisma.serviceCategory.update({ where: { id }, data: { isActive: false } });
+  return { deleted: true, name: category.name };
+};
+
 const openImage = async (id) => {
   const category = await find(id);
   if (!category.imageKey) throw ApiError.notFound('This category has no image');
   return { stream: await storage.getStream(category.imageKey), mimeType: category.imageMime };
 };
 
-module.exports = { list, create, setImage, removeImage, openImage };
+module.exports = { remove, list, create, setImage, removeImage, openImage };

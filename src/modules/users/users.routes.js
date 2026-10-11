@@ -43,7 +43,10 @@ router.get('/:id', authenticate, authorize('ADMIN'), validate(schema.getUser), c
 router.get('/:id/photo', authenticate, validate(schema.getUser), controller.getPhoto);
 router.patch('/:id/active', authenticate, authorize('ADMIN'), validate(schema.setActive), controller.setActive);
 
+router.get('/:id/location', authenticate, authorize('ADMIN'), validate(schema.getUser), controller.getLocation);
+
 // Editing or deleting someone else's account is a super admin decision.
+router.put('/:id/location', authenticate, authorize('SUPER_ADMIN'), validate(schema.setLocation), controller.setLocation);
 router.patch('/:id', authenticate, authorize('SUPER_ADMIN'), validate(schema.adminUpdate), controller.adminUpdate);
 router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), validate(schema.getUser), controller.adminDelete);
 

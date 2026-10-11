@@ -21,4 +21,8 @@ const createZone = catchAsync(async (req, res) => {
   res.status(201).json({ success: true, data: zone });
 });
 
-module.exports = { listCities, createCity, listZones, createZone };
+const removeCity = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await service.removeCity(req.params.id) }));
+
+const removeZone = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await service.removeZone(req.params.id) }));
+
+module.exports = { removeCity, removeZone, listCities, createCity, listZones, createZone };

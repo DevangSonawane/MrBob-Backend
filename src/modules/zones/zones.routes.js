@@ -9,7 +9,11 @@ const router = Router();
 router.get('/cities', controller.listCities);
 router.post('/cities', authenticate, authorize('ADMIN'), validate(schema.createCity), controller.createCity);
 
+router.delete('/cities/:id', authenticate, authorize('ADMIN'), validate(schema.byId), controller.removeCity);
+
 router.get('/', validate(schema.listZones), controller.listZones);
 router.post('/', authenticate, authorize('ADMIN'), validate(schema.createZone), controller.createZone);
+
+router.delete('/:id', authenticate, authorize('ADMIN'), validate(schema.byId), controller.removeZone);
 
 module.exports = router;

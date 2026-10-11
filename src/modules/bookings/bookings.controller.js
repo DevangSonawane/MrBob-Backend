@@ -26,4 +26,6 @@ const collectPayment = catchAsync(async (req, res) => ok(res, await service.coll
 
 const markRefunded = catchAsync(async (req, res) => ok(res, await service.markRefunded(req.params.id, req.user, req.body.reference)));
 
-module.exports = { create, confirmPayment, list, getSummary, getById, updateStatus, cancel, reschedule, collectPayment, markRefunded };
+const remove = catchAsync(async (req, res) => ok(res, await service.remove(req.params.id)));
+
+module.exports = { remove, create, confirmPayment, list, getSummary, getById, updateStatus, cancel, reschedule, collectPayment, markRefunded };

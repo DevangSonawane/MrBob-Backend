@@ -29,6 +29,16 @@ router.post(
   }),
 );
 
+router.delete(
+  '/:id',
+  authenticate,
+  authorize('ADMIN'),
+  validate(schema.categoryOnly),
+  catchAsync(async (req, res) => {
+    res.status(200).json({ success: true, data: await service.remove(req.params.id) });
+  }),
+);
+
 // Category pictures are public: the app shows them before anyone signs in.
 router.get(
   '/:id/image',

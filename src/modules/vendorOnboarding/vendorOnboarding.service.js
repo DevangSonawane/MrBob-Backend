@@ -770,14 +770,15 @@ const getApplicationProfilePhoto = async (id) => openProfilePhoto(await loadById
 // ---------------------------------------------------------------------------
 
 const listApplications = async ({ page, limit, status, cityId, zoneId, categoryId, search, submittedFrom, submittedTo, sortBy, sortOrder }) => {
-  const userFilter = { ...(cityId && { cityId }), ...(search && personSearch(search)) };
+  // A deleted vendor's (wiped) record is kept for their past bookings; it is not an application any more.
+  const userFilter = { deletedAt: null, ...(cityId && { cityId }), ...(search && personSearch(search)) };
   const submittedAt = dateRange(submittedFrom, submittedTo);
   const where = {
     ...(status && { onboardingStatus: { in: status } }),
     ...(zoneId && { homeZoneId: zoneId }),
     ...(categoryId && { categories: { has: categoryId } }),
     ...(submittedAt && { submittedAt }),
-    ...(Object.keys(userFilter).length && { user: userFilter }),
+    user: userFilter,
   };
 
   // Default: the review queue — oldest submission first, never-submitted drafts last.
@@ -826,7 +827,7 @@ const listApplications = async ({ page, limit, status, cityId, zoneId, categoryI
 };
 
 const getSummary = async () => {
-  const groups = await prisma.professional.groupBy({ by: ['onboardingStatus'], _count: { _all: true } });
+  const groups = await prisma.professional.groupBy({ by: ['onboardingStatus'], where: { user: { deletedAt: null } }, _count: { _all: true } });
   const byStatus = Object.fromEntries(Object.keys(KYC_STATUS_FOR).map((status) => [status, 0]));
   groups.forEach((group) => {
     byStatus[group.onboardingStatus] = group._count._all;

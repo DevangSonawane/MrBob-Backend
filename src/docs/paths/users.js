@@ -5,6 +5,34 @@ const TAG = 'Users';
 const SUPER_ADMIN = 'Super admin panel';
 const userId = pathParam('id', 'User id');
 
+const placeRef = { type: 'object', nullable: true, properties: { id: { type: 'string', format: 'uuid' }, name: { type: 'string' } } };
+const text = { type: 'string', nullable: true };
+const location = {
+  type: 'object',
+  properties: {
+    userId: { type: 'string', format: 'uuid' },
+    isVendor: { type: 'boolean', description: 'True when this is the address on a vendor profile' },
+    addressLine1: text,
+    addressLine2: text,
+    landmark: text,
+    state: text,
+    pincode: text,
+    city: placeRef,
+    zone: placeRef,
+  },
+};
+const locationExample = {
+  userId: '9c8b7a6d-5555-4f4e-8d3c-2b1a0f9e8d7c',
+  isVendor: false,
+  addressLine1: '12, 4th Cross, 5th Block',
+  addressLine2: 'Koramangala',
+  landmark: 'Near Forum Mall',
+  state: 'Karnataka',
+  pincode: '560034',
+  city: { id: '0d9b7a3c-1111-4a2b-9c3d-4e5f6a7b8c9d', name: 'Bengaluru' },
+  zone: { id: '7a6b5c4d-3333-4e2f-9a1b-0c9d8e7f6a5b', name: 'Koramangala' },
+};
+
 module.exports = {
   tags: [
     {
@@ -164,6 +192,45 @@ module.exports = {
         params: [userId],
         body: jsonBody({ type: 'object', required: ['isActive'], properties: { isActive: { type: 'boolean' } } }, { isActive: false }),
         responses: { 200: ok('Updated user', ref('User')) },
+        errors: [404],
+      }),
+    },
+    '/users/{id}/location': {
+      get: op({
+        tag: [TAG, SUPER_ADMIN],
+        summary: "Get a user's address, city and zone",
+        description:
+          'One address with its city and zone. For a vendor it is the address on their vendor profile and the zone they work from; ' +
+          'for anyone else it is their default address.',
+        access: 'ADMIN',
+        params: [userId],
+        responses: { 200: ok('Where the user is based', location, locationExample) },
+        errors: [404],
+      }),
+      put: op({
+        tag: [TAG, SUPER_ADMIN],
+        summary: "Edit a user's address, city and zone",
+        description:
+          'Only the fields sent are changed; `null` or an empty string clears one. The city must be active and the zone must belong to it ' +
+          '(otherwise **400**). Changing the city without sending a zone clears the zone.',
+        access: 'SUPER_ADMIN',
+        params: [userId],
+        body: jsonBody(
+          {
+            type: 'object',
+            properties: {
+              addressLine1: { type: 'string', maxLength: 200, nullable: true },
+              addressLine2: { type: 'string', maxLength: 200, nullable: true },
+              landmark: { type: 'string', maxLength: 200, nullable: true },
+              state: { type: 'string', maxLength: 60, nullable: true },
+              pincode: { type: 'string', maxLength: 10, nullable: true },
+              cityId: { type: 'string', format: 'uuid', nullable: true, description: 'From GET /zones/cities' },
+              zoneId: { type: 'string', format: 'uuid', nullable: true, description: 'From GET /zones?cityId=…' },
+            },
+          },
+          { addressLine1: '12, 4th Cross, 5th Block', cityId: locationExample.city.id, zoneId: locationExample.zone.id, state: 'Karnataka', pincode: '560034' },
+        ),
+        responses: { 200: ok('The saved location', location, locationExample) },
         errors: [404],
       }),
     },

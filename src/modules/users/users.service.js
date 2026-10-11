@@ -197,6 +197,65 @@ const adminUpdate = async (id, { dateOfBirth, ...data }, actor) => {
   return getDetail(id);
 };
 
+// Where someone is based, as an admin sees and edits it: one address with its
+// city and zone. A vendor's lives on their vendor profile (the zone is the one
+// they work from); anyone else's is their default address.
+const place = { select: { id: true, name: true } };
+
+const getLocation = async (id) => {
+  const user = await findActive(id, { city: place, professional: { include: { homeZone: place } } });
+  if (user.professional) {
+    const { addressLine1, addressLine2, landmark, state, pincode, homeZone } = user.professional;
+    return { userId: id, isVendor: true, addressLine1, addressLine2, landmark, state, pincode, city: user.city, zone: homeZone };
+  }
+  const address = await prisma.address.findFirst({ where: { userId: id, isDefault: true }, include: { city: place, zone: place } });
+  return {
+    userId: id,
+    isVendor: false,
+    addressLine1: address?.line1 || null,
+    addressLine2: address?.line2 ?? null,
+    landmark: address?.landmark ?? null,
+    state: address?.state || null,
+    pincode: address?.pincode || null,
+    city: address?.city ?? user.city,
+    zone: address?.zone ?? null,
+  };
+};
+
+// Only the fields sent are changed; null clears one. Choosing another city
+// drops a zone that was not chosen again, since zones belong to a city.
+const setLocation = async (id, body) => {
+  const current = await getLocation(id);
+  const cityId = body.cityId === undefined ? (current.city?.id ?? null) : body.cityId;
+  const cityChanged = cityId !== (current.city?.id ?? null);
+  const zoneId = body.zoneId === undefined ? (cityChanged ? null : (current.zone?.id ?? null)) : body.zoneId;
+
+  if (cityId && cityChanged) {
+    const city = await prisma.city.findUnique({ where: { id: cityId } });
+    if (!city || !city.isActive) throw ApiError.badRequest('Unknown or inactive city');
+  }
+  if (zoneId && (cityChanged || zoneId !== current.zone?.id)) {
+    const zone = await prisma.zone.findUnique({ where: { id: zoneId } });
+    if (!zone || !zone.isActive || zone.cityId !== cityId) throw ApiError.badRequest('Choose a zone in the selected city');
+  }
+
+  const text = (key) => (body[key] === undefined ? current[key] : body[key] || null);
+  const next = { addressLine1: text('addressLine1'), addressLine2: text('addressLine2'), landmark: text('landmark'), state: text('state'), pincode: text('pincode') };
+
+  if (current.isVendor) {
+    await prisma.$transaction([
+      prisma.professional.update({ where: { userId: id }, data: { ...next, homeZoneId: zoneId } }),
+      prisma.user.update({ where: { id }, data: { cityId } }),
+    ]);
+  } else {
+    // The address columns are required text, so an empty part is stored blank.
+    const data = { line1: next.addressLine1 ?? '', line2: next.addressLine2, landmark: next.landmark, state: next.state ?? '', pincode: next.pincode ?? '', cityId, zoneId };
+    await addresses.saveDefault(id, data, { unchecked: true });
+    await prisma.user.update({ where: { id }, data: { cityId } });
+  }
+  return getLocation(id);
+};
+
 const adminDelete = async (id, actor) => {
   if (id === actor.id) throw ApiError.badRequest('You cannot delete your own account');
   return deleteAccount(id);
@@ -237,5 +296,7 @@ module.exports = {
   setActive,
   adminUpdate,
   adminDelete,
+  getLocation,
+  setLocation,
   create,
 };

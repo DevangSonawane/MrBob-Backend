@@ -356,6 +356,25 @@ const getById = async (id, user) => {
 };
 
 // Headline numbers for the admin bookings screen.
+// Permanently removes a booking with its timeline, payment record and review.
+// Not while someone is on the job or a refund is owed: finish or cancel first.
+const remove = async (id) => {
+  const booking = await prisma.booking.findUnique({ where: { id }, include: { payment: true } });
+  if (!booking) throw ApiError.notFound('Booking not found');
+  if (['ASSIGNED', 'IN_PROGRESS'].includes(booking.status)) {
+    throw ApiError.conflict('A professional is on this booking. Complete or cancel it before deleting.');
+  }
+  if (booking.payment?.status === 'REFUND_PENDING') {
+    throw ApiError.conflict('A refund is still owed on this booking. Mark it refunded before deleting.');
+  }
+  await prisma.$transaction([
+    prisma.review.deleteMany({ where: { bookingId: id } }),
+    prisma.payment.deleteMany({ where: { bookingId: id } }),
+    prisma.booking.delete({ where: { id } }),
+  ]);
+  return { deleted: true, bookingNumber: bookingNumber(booking.sequence) };
+};
+
 const getSummary = async () => {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
@@ -509,4 +528,5 @@ module.exports = {
   reschedule,
   collectPayment,
   markRefunded,
+  remove,
 };

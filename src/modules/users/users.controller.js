@@ -59,6 +59,10 @@ const setActive = catchAsync(async (req, res) =>
   ok(res, sanitizeUser(await usersService.setActive(req.params.id, req.body.isActive, req.user))),
 );
 
+const getLocation = catchAsync(async (req, res) => ok(res, await usersService.getLocation(req.params.id)));
+
+const setLocation = catchAsync(async (req, res) => ok(res, await usersService.setLocation(req.params.id, req.body)));
+
 const adminUpdate = catchAsync(async (req, res) => ok(res, sanitizeUser(await usersService.adminUpdate(req.params.id, req.body, req.user))));
 
 const adminDelete = catchAsync(async (req, res) => ok(res, await usersService.adminDelete(req.params.id, req.user)));
@@ -87,6 +91,8 @@ module.exports = {
   getPhoto,
   setActive,
   adminUpdate,
+  getLocation,
+  setLocation,
   adminDelete,
   create,
 };

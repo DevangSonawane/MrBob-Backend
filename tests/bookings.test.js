@@ -445,4 +445,21 @@ describe('Listing bookings', () => {
     expect(cancelled.status).toBe(200);
     expect(cancelled.body.data).toMatchObject({ status: 'CANCELLED', cancellation: { by: 'ADMIN' }, payment: { status: 'UNPAID' } });
   });
+
+  it('lets only a super admin delete a booking, and not while someone is on the job', async () => {
+    const superAdmin = { Authorization: `Bearer ${issueTokenPair({ ...admin, role: 'SUPER_ADMIN' }).accessToken}` };
+    const remove = (auth, id) => request(app).delete(`${API}/bookings/${id}`).set(auth);
+    const res = await book(otherCustomer, { scheduledAt: inHours(50) });
+    const id = res.body.data.id;
+    expect((await remove(admin.auth, id)).status).toBe(403);
+
+    await request(app).post(`${API}/dispatch/bookings/${id}/assign`).set(admin.auth).send({ professionalId: otherPro.professionalId });
+    expect((await remove(superAdmin, id)).status).toBe(409);
+    await post(admin, id, 'cancel', { reason: 'Clearing a test booking' });
+
+    const deleted = await remove(superAdmin, id);
+    expect(deleted.status).toBe(200);
+    expect(deleted.body.data).toMatchObject({ deleted: true, bookingNumber: res.body.data.bookingNumber });
+    expect((await request(app).get(`${API}/bookings/${id}`).set(admin.auth)).status).toBe(404);
+  });
 });
