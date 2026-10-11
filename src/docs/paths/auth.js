@@ -26,10 +26,12 @@ module.exports = {
         summary: 'Send a login OTP',
         description:
           'Generates a 4-digit code valid for 5 minutes (5 wrong attempts discard it). In development without a WhatsApp token, the code is written to the server log. ' +
-          'If the server has `OTP_STATIC_CODE` set (no SMS provider yet), the code is always that fixed value.',
+          'If the server has `OTP_STATIC_CODE` set (no SMS provider yet), the code is always that fixed value — and admin accounts are ' +
+          'refused here (**403**), because a shared code proves nothing about who is signing in. They use email + password.',
         access: 'public',
         body: jsonBody({ type: 'object', required: ['phone'], properties: { phone } }, { phone: '+919812345678' }),
         responses: { 200: ok('OTP sent', { type: 'object', properties: { sent: { type: 'boolean' } } }, { sent: true }) },
+        errors: [403],
       }),
     },
     '/auth/otp/verify': {

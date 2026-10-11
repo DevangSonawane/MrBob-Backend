@@ -4,16 +4,31 @@ const ApiError = require('../../utils/ApiError');
 const otpStore = require('./otp.store');
 const notificationsService = require('../notifications/notifications.service');
 const { issueTokenPair, verifyRefreshToken } = require('./token.util');
+const env = require('../../config/env');
+const { isAdmin } = require('../../utils/roles');
 
 const SALT_ROUNDS = 12;
 
+// While OTP_STATIC_CODE is set, every phone number "receives" the same
+// publicly known code, so an OTP proves nothing about who is signing in.
+// That is tolerable for test customers and vendors; it is not for staff
+// accounts, which can read KYC documents and approve vendors. They sign in
+// with email + password until real OTP delivery exists.
+const assertOtpLoginAllowed = (user) => {
+  if (env.OTP_STATIC_CODE && user && isAdmin(user.role)) {
+    throw ApiError.forbidden('Admin accounts sign in with email and password');
+  }
+};
+
 const requestOtp = async (phone) => {
+  assertOtpLoginAllowed(await prisma.user.findUnique({ where: { phone } }));
   const otp = otpStore.setOtp(phone);
   await notificationsService.sendOtp(phone, otp);
   return { sent: true };
 };
 
 const verifyOtpAndLogin = async (phone, otp, name) => {
+  assertOtpLoginAllowed(await prisma.user.findUnique({ where: { phone } }));
   const isValid = otpStore.verifyOtp(phone, otp);
   if (!isValid) {
     throw ApiError.badRequest('Invalid or expired OTP');

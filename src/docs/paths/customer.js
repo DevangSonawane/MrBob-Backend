@@ -1,4 +1,4 @@
-const { ref, arrayOf, ok, fileResponse, jsonBody, multipartBody, pathParam, op } = require('../helpers');
+const { ref, arrayOf, ok, fileResponse, jsonBody, multipartBody, pathParam, requiredWhenStrict, op } = require('../helpers');
 const { examples } = require('../components');
 
 // One tag per step of the customer journey, then one for managing the account afterwards.
@@ -106,12 +106,13 @@ module.exports = {
         tag: STEP_3,
         summary: 'Save name and gender',
         description:
-          '`name` and `gender` are required. `email` and `dateOfBirth` may be sent here too, or added later from the profile screen. ' +
+          'No field is mandatory — send whichever of `name`, `gender`, `email` and `dateOfBirth` the customer has filled in; the rest can be added ' +
+          'later from the profile screen. ' +
           'Returns **409** if the email belongs to another account.',
         body: jsonBody(
           {
             type: 'object',
-            required: ['name', 'gender'],
+            ...requiredWhenStrict(['name', 'gender']),
             properties: {
               name: { type: 'string', minLength: 2, maxLength: 100 },
               gender,
@@ -133,8 +134,8 @@ module.exports = {
         description:
           'Saves the customer\'s default address and, once name and gender are also in, sets `isOnboarded` to true. Calling it again updates ' +
           'that same address. More addresses are added later through **My account**.\n\n' +
-          'The city must be one the service operates in (`GET /zones/cities`); otherwise **400**.',
-        body: jsonBody({ type: 'object', required: addressRequired, properties: addressProperties }, addressBodyExample),
+          'No field is mandatory. Get `cityId` from `GET /zones/cities`.',
+        body: jsonBody({ type: 'object', ...requiredWhenStrict(addressRequired), properties: addressProperties }, addressBodyExample),
         responses: { 200: ok('Saved — onboarding complete', onboarding, examples.customerOnboarding('done')) },
         errors: [403],
       }),

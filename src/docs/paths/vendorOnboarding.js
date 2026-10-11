@@ -1,4 +1,4 @@
-const { ref, arrayOf, ok, paginated, fileResponse, jsonBody, multipartBody, pathParam, queryParam, dateParam, sortParams, pageParams, op } = require('../helpers');
+const { ref, arrayOf, ok, paginated, fileResponse, jsonBody, multipartBody, pathParam, requiredWhenStrict, queryParam, dateParam, sortParams, pageParams, op } = require('../helpers');
 const { examples, ONBOARDING_STATUSES } = require('../components');
 
 // One tag per step of the vendor journey, so the docs read top to bottom in
@@ -148,7 +148,7 @@ module.exports = {
         body: jsonBody(
           {
             type: 'object',
-            required: ['name', 'dateOfBirth', 'gender', 'cityId', 'addressLine1', 'pincode', 'state'],
+            ...requiredWhenStrict(['name', 'dateOfBirth', 'gender', 'cityId', 'addressLine1', 'pincode', 'state']),
             properties: {
               name: { type: 'string', minLength: 2, maxLength: 100, description: 'Full name, as on the Aadhaar card' },
               dateOfBirth: { type: 'string', format: 'date', description: 'YYYY-MM-DD. Must be 18 or older.' },
@@ -193,7 +193,7 @@ module.exports = {
         description:
           `A clear photo of the vendor's face. JPEG, PNG or WebP, up to 5 MB. Uploading again replaces it. ${NOT_EDITABLE}\n\n` +
           'Reviewers see it during verification; customers see it once the vendor is approved.',
-        body: multipartBody({ type: 'object', required: ['photo'], properties: { photo: binary('The image file') } }),
+        body: multipartBody({ type: 'object', ...requiredWhenStrict(['photo']), properties: { photo: binary('The image file') } }),
         responses: { 200: ok('Updated application', application, examples.application('DRAFT')) },
         errors: [403, 409, 503],
       }),
@@ -215,7 +215,7 @@ module.exports = {
         body: jsonBody(
           {
             type: 'object',
-            required: ['categories', 'experienceYears'],
+            ...requiredWhenStrict(['categories', 'experienceYears']),
             properties: {
               categories: { ...arrayOf({ type: 'string', format: 'uuid' }), minItems: 1, maxItems: 20, description: 'Ids of active service categories' },
               experienceYears: { type: 'integer', minimum: 0, maximum: 60 },
@@ -237,15 +237,15 @@ module.exports = {
           `Send as \`multipart/form-data\`. ${NOT_EDITABLE}\n\n` +
           '| | Aadhaar | PAN |\n|---|---|---|\n' +
           '| `number` | 12 digits (spaces allowed), checksum-validated | 10 characters, e.g. `ABCPE1234F` |\n' +
-          '| `front` | required | required |\n' +
-          '| `back` | required | not accepted |\n\n' +
+          '| `front` | image of the front | image of the front |\n' +
+          '| `back` | image of the back | not used |\n\n' +
           'Files: JPEG, PNG, WebP or PDF, up to 5 MB each. When replacing a document the files may be omitted to keep the ones already uploaded.\n\n' +
           'The number is stored encrypted and is only ever returned masked. Returns **409** if the number is already registered on another ' +
           'account, or if this document has already been verified.',
         params: [documentType(['aadhaar', 'pan'], 'Which document')],
         body: multipartBody({
           type: 'object',
-          required: ['number', 'nameOnDocument'],
+          ...requiredWhenStrict(['number', 'nameOnDocument']),
           properties: {
             number: { type: 'string', example: '2345 6789 0124', description: 'Aadhaar number or PAN' },
             nameOnDocument: { type: 'string', example: 'Ravi Kumar', description: 'Name exactly as printed on the document' },
@@ -270,7 +270,7 @@ module.exports = {
           'or has already been verified.',
         body: multipartBody({
           type: 'object',
-          required: ['accountHolderName', 'accountNumber', 'ifsc', 'bankName', 'accountType'],
+          ...requiredWhenStrict(['accountHolderName', 'accountNumber', 'ifsc', 'bankName', 'accountType']),
           properties: {
             accountHolderName: { type: 'string', example: 'Ravi Kumar' },
             accountNumber: { type: 'string', example: '50100123456789', description: '9 to 18 digits' },

@@ -1,6 +1,40 @@
 const env = require('../src/config/env');
 const otpStore = require('../src/modules/auth/otp.store');
 
+const request = require('supertest');
+const app = require('../src/app');
+const prisma = require('../src/config/prisma');
+
+describe('Admin accounts and the static OTP', () => {
+  const original = env.OTP_STATIC_CODE;
+  const phone = `+9194${String(Date.now()).slice(-8)}`;
+  let admin;
+
+  beforeAll(async () => {
+    admin = await prisma.user.create({ data: { name: 'OTP Test Admin', role: 'ADMIN', phone } });
+  });
+  afterAll(async () => {
+    env.OTP_STATIC_CODE = original;
+    await prisma.user.delete({ where: { id: admin.id } });
+    await prisma.$disconnect();
+  });
+
+  it('cannot sign in by OTP while every number shares one code', async () => {
+    env.OTP_STATIC_CODE = '1234';
+    const requested = await request(app).post('/api/v1/auth/otp/request').send({ phone });
+    expect(requested.status).toBe(403);
+    const verified = await request(app).post('/api/v1/auth/otp/verify').send({ phone, otp: '1234' });
+    expect(verified.status).toBe(403);
+    expect(verified.body.data).toBeUndefined();
+  });
+
+  it('can again once OTPs are real', async () => {
+    env.OTP_STATIC_CODE = undefined;
+    const requested = await request(app).post('/api/v1/auth/otp/request').send({ phone });
+    expect(requested.status).toBe(200);
+  });
+});
+
 describe('OTP generation', () => {
   const original = env.OTP_STATIC_CODE;
   afterEach(() => {

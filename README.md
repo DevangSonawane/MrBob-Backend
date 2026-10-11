@@ -101,6 +101,13 @@ The seed creates one city (Bengaluru), one zone (Koramangala), three service cat
 (Electrician, Plumber, AC Repair), and one super admin user (`+919999999999`). Re-running it
 promotes that account to `SUPER_ADMIN` if it was created before the role existed.
 
+To sign in to the admin dashboard, give that account an email and password by running the
+seed with `SEED_SUPER_ADMIN_EMAIL` and `SEED_SUPER_ADMIN_PASSWORD` set (re-run to change them):
+
+```bash
+SEED_SUPER_ADMIN_EMAIL=you@example.com SEED_SUPER_ADMIN_PASSWORD='a-strong-password' npm run seed
+```
+
 ### 5. Run the server
 
 ```bash
@@ -136,6 +143,10 @@ pair. Send `Authorization: Bearer <accessToken>` on subsequent requests.
 OTP — customer and vendor — is that fixed code, so the apps can be built and tested end to
 end. The request step is still required before verify. Unset it once real delivery exists:
 while it is on, anyone who knows the code can sign in as any phone number.
+
+While `OTP_STATIC_CODE` is set, **admin accounts cannot sign in by OTP** (403): a code everyone
+knows proves nothing about who is signing in, and staff can read KYC documents and approve
+vendors. They use email + password.
 
 The OTP store is an in-memory `Map` (`src/modules/auth/otp.store.js`) — fine for a single
 dev/staging instance, but swap it for Redis before running more than one instance behind a

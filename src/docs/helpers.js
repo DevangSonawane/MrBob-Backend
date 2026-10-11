@@ -1,6 +1,8 @@
 // Small builders for the OpenAPI spec, so every endpoint documents its
 // request and responses the same way without repeating the boilerplate.
 
+const { relaxed } = require('../utils/onboardingValidation');
+
 const ref = (name) => ({ $ref: `#/components/schemas/${name}` });
 const arrayOf = (items) => ({ type: 'array', items });
 
@@ -94,4 +96,7 @@ const op = ({ tag, summary, description = '', access = 'user', params = [], body
   };
 };
 
-module.exports = { ref, arrayOf, envelope, ok, paginated, fileResponse, jsonBody, multipartBody, pathParam, queryParam, dateParam, sortParams, pageParams, op, UUID };
+// Onboarding request bodies only have mandatory fields when validation is on.
+const requiredWhenStrict = (fields) => (relaxed ? {} : { required: fields });
+
+module.exports = { requiredWhenStrict, ref, arrayOf, envelope, ok, paginated, fileResponse, jsonBody, multipartBody, pathParam, queryParam, dateParam, sortParams, pageParams, op, UUID };
