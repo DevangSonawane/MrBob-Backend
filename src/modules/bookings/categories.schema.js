@@ -8,4 +8,6 @@ const createCategory = {
   }),
 };
 
-module.exports = { createCategory };
+const categoryOnly = { params: z.object({ id: z.uuid() }) };
+
+module.exports = { createCategory, categoryOnly };

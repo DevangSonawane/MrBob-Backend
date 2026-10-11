@@ -1,4 +1,4 @@
-const { ref, arrayOf, ok, paginated, jsonBody, pathParam, queryParam, dateParam, sortParams, pageParams, op } = require('../helpers');
+const { ref, arrayOf, ok, paginated, fileResponse, jsonBody, multipartBody, pathParam, queryParam, dateParam, sortParams, pageParams, op } = require('../helpers');
 const { examples } = require('../components');
 
 const CATEGORIES = 'Service categories';
@@ -42,6 +42,10 @@ module.exports = {
       post: op({
         tag: CATEGORIES,
         summary: 'Create a service category',
+        description:
+          'Returns **409** if a category with the same name (ignoring case) already exists.\n\n' +
+          'To add a picture in the same call, send `multipart/form-data` instead of JSON with the same fields plus the file in `image` ' +
+          '(JPEG, PNG or WebP, up to 5 MB). A picture can also be added or changed later with `PUT /categories/{id}/image`.',
         access: 'ADMIN',
         body: jsonBody(
           {
@@ -52,6 +56,37 @@ module.exports = {
           { name: 'Carpentry', tier: 'REPAIR', basePrice: 449 },
         ),
         responses: { 201: ok('Category created', ref('ServiceCategory')) },
+        errors: [409],
+      }),
+    },
+
+    '/categories/{id}/image': {
+      get: op({
+        tag: CATEGORIES,
+        summary: 'Download a category picture',
+        description: 'The path in a category\'s `image` field points here. Cached for a day; the `v` query value changes when the picture does.',
+        access: 'public',
+        params: [pathParam('id', 'Category id')],
+        responses: { 200: fileResponse('The image', ['image/jpeg', 'image/png', 'image/webp']) },
+        errors: [404],
+      }),
+      put: op({
+        tag: CATEGORIES,
+        summary: 'Upload or replace a category picture',
+        description: 'Send as `multipart/form-data` with the file in `image`. JPEG, PNG or WebP, up to 5 MB.',
+        access: 'ADMIN',
+        params: [pathParam('id', 'Category id')],
+        body: multipartBody({ type: 'object', required: ['image'], properties: { image: { type: 'string', format: 'binary' } } }),
+        responses: { 200: ok('Updated category', ref('ServiceCategory')) },
+        errors: [404, 503],
+      }),
+      delete: op({
+        tag: CATEGORIES,
+        summary: 'Remove a category picture',
+        access: 'ADMIN',
+        params: [pathParam('id', 'Category id')],
+        responses: { 200: ok('Updated category', ref('ServiceCategory')) },
+        errors: [404],
       }),
     },
 

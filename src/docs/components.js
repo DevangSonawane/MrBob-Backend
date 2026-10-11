@@ -539,6 +539,7 @@ const schemas = {
     isActive: { type: 'boolean', example: true },
     createdAt: dateTime(),
     updatedAt: dateTime(),
+    image: { type: 'string', nullable: true, example: '/categories/3f2e1d0c-2222-4b3a-8c7d-6e5f4a3b2c1d/image?v=1791700000000', description: 'Path of the category picture, relative to the API base URL; null when it has none. Public — no token needed.' },
   }),
   Professional: { ...object(professionalFields), description: 'The full professional record, including personal onboarding details. Only admins and the professional themselves receive this.' },
   ProfessionalWithUser: object({ ...professionalFields, user: userSummary, homeZone: nullable(ref('Zone')) }),

@@ -276,6 +276,10 @@ model ServiceCategory {
   name      String
   tier      ServiceTier
   basePrice Decimal     @db.Decimal(10, 2)
+  // Storage key and type of the picture shown for this service; served from
+  // GET /categories/:id/image.
+  imageKey  String?
+  imageMime String?
   isActive  Boolean     @default(true)
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
