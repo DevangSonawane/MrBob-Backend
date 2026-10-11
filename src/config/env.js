@@ -42,6 +42,11 @@ const envSchema = z.object({
     .optional()
     .or(z.literal('').transform(() => undefined)),
 
+  // Temporary, while the apps are being built: 'off' makes the onboarding
+  // endpoints accept unvalidated input; 'strict' turns every rule back on.
+  // See utils/onboardingValidation.js for exactly what each mode does.
+  ONBOARDING_VALIDATION: z.enum(['off', 'strict']).default('off'),
+
   // KYC: 32-byte key (base64 or hex) for encrypting Aadhaar/PAN numbers at rest.
   // Optional in dev/test (a fixed insecure key is used); required in production
   // before any document can be saved — see utils/kycCrypto.js.

@@ -1,26 +1,12 @@
 const prisma = require('../../config/prisma');
 const ApiError = require('../../utils/ApiError');
+const { isAdmin } = require('../../utils/roles');
 const razorpay = require('./razorpay.client');
+const bookings = require('../bookings/bookings.service');
 
-const createOrderForBooking = async (bookingId) => {
-  const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { payment: true } });
-  if (!booking) throw ApiError.notFound('Booking not found');
-  if (booking.payment) throw ApiError.conflict('A payment already exists for this booking');
-  if (!booking.price) throw ApiError.badRequest('Booking has no price set');
-
-  const order = await razorpay.createOrder({ amount: Number(booking.price), receipt: `booking_${bookingId}` });
-
-  const payment = await prisma.payment.create({
-    data: {
-      bookingId,
-      amount: booking.price,
-      gatewayRef: order.id,
-      status: 'CREATED',
-    },
-  });
-
-  return { payment, order };
-};
+// Orders for bookings are created by the booking flow itself (see
+// bookings.service.js create); this module covers looking a payment up and
+// reacting to what the gateway tells us.
 
 const createOrderForSubscription = async (subscriptionId, amount) => {
   const subscription = await prisma.aMCSubscription.findUnique({ where: { id: subscriptionId } });
@@ -40,17 +26,38 @@ const createOrderForSubscription = async (subscriptionId, amount) => {
   return { payment, order };
 };
 
-const getById = async (id) => {
-  const payment = await prisma.payment.findUnique({ where: { id } });
+// A payment is visible to admins, and to the customer whose booking or
+// subscription it pays for.
+const getById = async (id, user) => {
+  const payment = await prisma.payment.findUnique({
+    where: { id },
+    include: { booking: { select: { customerId: true } }, subscription: { select: { customerId: true } } },
+  });
   if (!payment) throw ApiError.notFound('Payment not found');
-  return payment;
+
+  const ownerId = payment.booking?.customerId ?? payment.subscription?.customerId;
+  if (!isAdmin(user.role) && ownerId !== user.id) throw ApiError.forbidden('You do not have access to this payment');
+
+  const { booking: _booking, subscription: _subscription, ...rest } = payment;
+  return rest;
 };
 
 // Called from the Razorpay webhook handler once the signature is verified.
-const markStatusByGatewayRef = async (gatewayRef, status) => {
-  const payment = await prisma.payment.findFirst({ where: { gatewayRef } });
+// The app normally confirms a payment itself; this is the safety net for when
+// it never gets the chance (closed mid-payment, lost connection).
+const handleGatewayEvent = async ({ event, orderId, paymentId }) => {
+  const payment = await prisma.payment.findFirst({ where: { gatewayRef: orderId } });
   if (!payment) return null;
-  return prisma.payment.update({ where: { id: payment.id }, data: { status } });
+
+  if (event === 'payment.captured') {
+    if (payment.bookingId) return bookings.markPaid(payment.bookingId, { gatewayPaymentId: paymentId });
+    return prisma.payment.update({ where: { id: payment.id }, data: { status: 'SUCCESS', gatewayPaymentId: paymentId, paidAt: new Date() } });
+  }
+  // A failed attempt doesn't close the order: the customer can try again.
+  if (event === 'payment.failed' && payment.status !== 'SUCCESS') {
+    return prisma.payment.update({ where: { id: payment.id }, data: { status: 'FAILED' } });
+  }
+  return null;
 };
 
-module.exports = { createOrderForBooking, createOrderForSubscription, getById, markStatusByGatewayRef };
+module.exports = { createOrderForSubscription, getById, handleGatewayEvent };

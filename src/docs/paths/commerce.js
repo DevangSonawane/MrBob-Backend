@@ -7,23 +7,20 @@ const subscriptionId = pathParam('id', 'Subscription id');
 
 module.exports = {
   tags: [
-    { name: PAYMENTS, description: 'Razorpay orders for bookings. Without Razorpay keys the server returns a mock order so the flow can be built end to end.' },
+    { name: PAYMENTS, description: 'Payment records and the gateway webhook. Paying for a booking is part of the **Booking flow**.' },
     { name: AMC, description: 'Annual maintenance contracts.' },
     { name: REVIEWS, description: 'Customer ratings of completed bookings. A professional\'s rating is the average of their reviews.' },
   ],
   paths: {
-    '/payments/bookings/{bookingId}/order': {
-      post: op({
-        tag: PAYMENTS,
-        summary: 'Create a payment order for a booking',
-        description: 'Creates a Razorpay order for the booking\'s price and a `CREATED` payment record. Returns **409** if the booking already has a payment and **400** if it has no price.',
-        params: [pathParam('bookingId', 'Booking id')],
-        responses: { 201: ok('Order created', { type: 'object', properties: { payment: ref('Payment'), order: ref('RazorpayOrder') } }) },
-        errors: [404, 409],
-      }),
-    },
     '/payments/{id}': {
-      get: op({ tag: PAYMENTS, summary: 'Get a payment', params: [pathParam('id', 'Payment id')], responses: { 200: ok('The payment', ref('Payment')) }, errors: [404] }),
+      get: op({
+        tag: PAYMENTS,
+        summary: 'Get a payment',
+        description: 'Available to admins and to the customer whose booking or subscription it pays for (otherwise **403**).',
+        params: [pathParam('id', 'Payment id')],
+        responses: { 200: ok('The payment', ref('Payment')) },
+        errors: [403, 404],
+      }),
     },
     '/payments/webhook': {
       post: op({
@@ -31,7 +28,8 @@ module.exports = {
         summary: 'Razorpay webhook',
         description:
           'Called by Razorpay, not by client apps. The raw body is verified against the `X-Razorpay-Signature` header (HMAC-SHA256 with the ' +
-          'Razorpay key secret); an invalid signature returns **401**.\n\n`payment.captured` marks the payment `SUCCESS`, `payment.failed` marks it `FAILED`.',
+          'Razorpay key secret); an invalid signature returns **401**.\n\n`payment.captured` marks the payment `SUCCESS` and releases its booking to `PENDING` (the backup for the app\'s own ' +
+          'confirmation call); `payment.failed` marks it `FAILED`, and the customer can try again on the same order.',
         access: 'public',
         params: [{ in: 'header', name: 'X-Razorpay-Signature', required: true, description: 'Signature of the raw request body', schema: { type: 'string' } }],
         body: jsonBody(

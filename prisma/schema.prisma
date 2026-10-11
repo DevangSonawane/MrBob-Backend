@@ -24,31 +24,83 @@ enum UserRole {
   SUPER_ADMIN // everything ADMIN can do, plus final vendor approval and managing other admins
 }
 
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
 model User {
-  id           String   @id @default(uuid())
-  name         String
-  phone        String?  @unique // set via phone/OTP signup, or added later during onboarding
-  email        String?  @unique // set via email/password signup
-  role         UserRole @default(CUSTOMER)
-  cityId       String?
-  address      String? // default address, captured during customer onboarding
-  passwordHash String? // present only for email/password accounts; OTP-only accounts have none
-  isOnboarded  Boolean  @default(false) // true once the role-specific onboarding flow is completed
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id               String    @id @default(uuid())
+  name             String
+  phone            String?   @unique // set via phone/OTP signup, or added later during onboarding
+  email            String?   @unique // set via email/password signup
+  role             UserRole  @default(CUSTOMER)
+  cityId           String?
+  address          String? // one-line copy of the default address (see Address); kept for older clients
+  gender           Gender?
+  dateOfBirth      DateTime? @db.Date
+  profilePhotoKey  String? // storage key; served through GET /users/{id}/photo
+  profilePhotoMime String?
+  passwordHash     String? // present only for email/password accounts; OTP-only accounts have none
+  isOnboarded      Boolean   @default(false) // true once the role-specific onboarding flow is completed
+  isActive         Boolean   @default(true)
+  lastLoginAt      DateTime?
+  // Set when the account is deleted. The row is kept (bookings and reviews
+  // still point at it) but its personal details are wiped.
+  deletedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   city                  City?                   @relation(fields: [cityId], references: [id])
   professional          Professional?
   bookings              Booking[]               @relation("CustomerBookings")
   amcSubscriptions      AMCSubscription[]
   reviews               Review[]
+  addresses             Address[]
+  bookingEvents         BookingEvent[]          @relation("BookingEventActor")
   reviewedProfessionals Professional[]          @relation("ProfessionalReviewer")
   verifiedDocuments     ProfessionalDocument[]  @relation("DocumentVerifier")
   onboardingEvents      VendorOnboardingEvent[] @relation("OnboardingEventActor")
 
   @@index([cityId])
   @@map("users")
+}
+
+enum AddressLabel {
+  HOME
+  WORK
+  OTHER
+}
+
+// A customer's saved addresses. Exactly one per user is the default; the
+// user's cityId and one-line `address` mirror it.
+model Address {
+  id           String       @id @default(uuid())
+  userId       String
+  label        AddressLabel @default(HOME)
+  contactName  String? // who to ask for at this address, if not the account holder
+  contactPhone String?
+  line1        String
+  line2        String?
+  landmark     String?
+  cityId       String? // always set by the app's own forms; only empty when saved with onboarding validation off
+  zoneId       String?
+  state        String
+  pincode      String
+  latitude     Decimal?     @db.Decimal(9, 6)
+  longitude    Decimal?     @db.Decimal(9, 6)
+  isDefault    Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  city     City?     @relation(fields: [cityId], references: [id])
+  zone     Zone?     @relation(fields: [zoneId], references: [id])
+  bookings Booking[]
+
+  @@index([userId])
+  @@map("addresses")
 }
 
 // ---------------------------------------------------------------------------
@@ -72,12 +124,6 @@ enum VendorOnboardingStatus {
   CHANGES_REQUESTED // sent back to the vendor to fix something and resubmit
   APPROVED
   REJECTED
-}
-
-enum Gender {
-  MALE
-  FEMALE
-  OTHER
 }
 
 model Professional {
@@ -244,7 +290,8 @@ model ServiceCategory {
 // ---------------------------------------------------------------------------
 
 enum BookingStatus {
-  PENDING
+  AWAITING_PAYMENT // created with online payment chosen; not dispatched until paid
+  PENDING // confirmed, waiting for a professional
   MATCHING
   ASSIGNED
   IN_PROGRESS
@@ -252,30 +299,104 @@ enum BookingStatus {
   CANCELLED
 }
 
+enum PaymentMode {
+  ONLINE // paid up front through the payment gateway
+  PAY_AFTER_SERVICE // collected by the professional once the job is done
+}
+
+// Who did something to a booking.
+enum BookingActor {
+  CUSTOMER
+  PROFESSIONAL
+  ADMIN
+  SYSTEM
+}
+
 model Booking {
   id             String        @id @default(uuid())
+  // Human-friendly reference shown to customers and support as BK-000123.
+  sequence       Int           @unique @default(autoincrement())
   customerId     String
   professionalId String?
   categoryId     String
   status         BookingStatus @default(PENDING)
   scheduledAt    DateTime?
-  address        String
+  description    String? // the customer's description of the problem
+  paymentMode    PaymentMode   @default(PAY_AFTER_SERVICE)
   price          Decimal?      @db.Decimal(10, 2)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+
+  // Where the job is. Copied from the customer's saved address when the
+  // booking is made, so later edits to (or deletion of) that address never
+  // change where a booked job takes place.
+  address      String // the full address on one line
+  addressId    String? // the saved address it came from, if that still exists
+  cityId       String?
+  zoneId       String?
+  pincode      String?
+  latitude     Decimal? @db.Decimal(9, 6)
+  longitude    Decimal? @db.Decimal(9, 6)
+  contactName  String?
+  contactPhone String?
+
+  // Milestones
+  assignedAt         DateTime?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  cancelledBy        BookingActor?
+  cancellationReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   customer     User            @relation("CustomerBookings", fields: [customerId], references: [id])
   professional Professional?   @relation("ProfessionalBookings", fields: [professionalId], references: [id])
   category     ServiceCategory @relation(fields: [categoryId], references: [id])
+  savedAddress Address?        @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  city         City?           @relation(fields: [cityId], references: [id])
+  zone         Zone?           @relation(fields: [zoneId], references: [id])
   payment      Payment?
   review       Review?
   partnerId    String?
   partner      Partner?        @relation(fields: [partnerId], references: [id])
+  events       BookingEvent[]
 
   @@index([customerId])
   @@index([professionalId])
   @@index([status])
+  @@index([scheduledAt])
+  @@index([cityId])
   @@map("bookings")
+}
+
+enum BookingEventType {
+  CREATED
+  PAYMENT_RECEIVED
+  STATUS_CHANGED
+  ASSIGNED
+  RESCHEDULED
+  CANCELLED
+  PAYMENT_COLLECTED
+  REFUNDED
+}
+
+// Append-only timeline of everything that happened to a booking.
+model BookingEvent {
+  id         String           @id @default(uuid())
+  bookingId  String
+  type       BookingEventType
+  actorId    String? // null for SYSTEM (e.g. the payment gateway's webhook)
+  actorRole  BookingActor
+  fromStatus BookingStatus?
+  toStatus   BookingStatus?
+  note       String?
+  createdAt  DateTime         @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  actor   User?   @relation("BookingEventActor", fields: [actorId], references: [id])
+
+  @@index([bookingId, createdAt])
+  @@map("booking_events")
 }
 
 // ---------------------------------------------------------------------------
@@ -314,19 +435,24 @@ enum PaymentStatus {
   PENDING
   SUCCESS
   FAILED
+  REFUND_PENDING // a paid booking was cancelled; the money has not gone back yet
   REFUNDED
 }
 
 model Payment {
-  id             String        @id @default(uuid())
-  bookingId      String?       @unique
-  subscriptionId String?
-  amount         Decimal       @db.Decimal(10, 2)
-  method         String? // upi, card, netbanking, wallet...
-  gatewayRef     String? // razorpay order/payment id
-  status         PaymentStatus @default(CREATED)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  id               String        @id @default(uuid())
+  bookingId        String?       @unique
+  subscriptionId   String?
+  amount           Decimal       @db.Decimal(10, 2)
+  method           String? // upi, card, netbanking, wallet...
+  gatewayRef       String? // razorpay order/payment id
+  gatewayPaymentId String? // razorpay payment id, once paid
+  paidAt           DateTime?
+  refundedAt       DateTime?
+  refundReference  String? // gateway refund id, or a note on how it was refunded
+  status           PaymentStatus @default(CREATED)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   booking      Booking?         @relation(fields: [bookingId], references: [id])
   subscription AMCSubscription? @relation(fields: [subscriptionId], references: [id])
@@ -369,9 +495,11 @@ model City {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  zones    Zone[]
-  users    User[]
-  partners Partner[]
+  zones     Zone[]
+  users     User[]
+  partners  Partner[]
+  addresses Address[]
+  bookings  Booking[]
 
   @@map("cities")
 }
@@ -385,6 +513,8 @@ model Zone {
 
   city          City           @relation(fields: [cityId], references: [id])
   professionals Professional[]
+  addresses     Address[]
+  bookings      Booking[]
 
   @@index([cityId])
   @@map("zones")

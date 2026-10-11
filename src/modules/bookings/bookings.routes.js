@@ -6,17 +6,25 @@ const schema = require('./bookings.schema');
 
 const router = Router();
 
-router.post('/', authenticate, authorize('CUSTOMER'), validate(schema.createBooking), controller.create);
-router.get('/', authenticate, validate(schema.listBookings), controller.list);
+// Request and response shapes are documented in src/docs/paths/bookings.js
+// (served at /api-docs).
 
+// The whole booking — service, date & time, problem, address, payment choice — in one call.
+router.post('/', authenticate, authorize('CUSTOMER'), validate(schema.createBooking), controller.create);
+
+// Customers see their own bookings, professionals their jobs, admins everything (with filters).
+router.get('/', authenticate, validate(schema.listBookings), controller.list);
+router.get('/summary', authenticate, authorize('ADMIN'), controller.getSummary);
 router.get('/:id', authenticate, validate(schema.getBooking), controller.getById);
 
-router.patch(
-  '/:id/status',
-  authenticate,
-  authorize('PROFESSIONAL', 'ADMIN'),
-  validate(schema.updateStatus),
-  controller.updateStatus,
-);
+// Payment
+router.post('/:id/payment/confirm', authenticate, authorize('CUSTOMER'), validate(schema.confirmPayment), controller.confirmPayment);
+router.post('/:id/payment/collect', authenticate, authorize('PROFESSIONAL', 'ADMIN'), validate(schema.collectPayment), controller.collectPayment);
+router.post('/:id/payment/refund', authenticate, authorize('ADMIN'), validate(schema.markRefunded), controller.markRefunded);
+
+// Changes
+router.post('/:id/cancel', authenticate, authorize('CUSTOMER', 'ADMIN'), validate(schema.cancelBooking), controller.cancel);
+router.post('/:id/reschedule', authenticate, authorize('CUSTOMER', 'ADMIN'), validate(schema.rescheduleBooking), controller.reschedule);
+router.patch('/:id/status', authenticate, authorize('PROFESSIONAL', 'ADMIN'), validate(schema.updateStatus), controller.updateStatus);
 
 module.exports = router;

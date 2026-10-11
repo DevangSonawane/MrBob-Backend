@@ -147,17 +147,118 @@ load balancer.
    (password hashed with bcrypt) and logs in immediately.
 2. `POST /auth/login { email, password }`.
 
-Either path lands the user in the same place: a `User` row with `isOnboarded: false`.
+Either path lands the user in the same place: a `User` row with `isOnboarded: false`. The
+customer and vendor apps use their own OTP endpoints instead (see the onboarding sections).
 
-## Onboarding
+## Customer onboarding
 
-After first login (via either path), the client is expected to walk the user through
-onboarding before letting them do anything role-specific:
+The customer app walks a customer through four steps (under `/customer-onboarding`). Swagger
+lists them first, one section per step.
 
-- `GET /onboarding/status` — `{ isOnboarded, role, hasProfessionalProfile, vendorOnboardingStatus }`.
-- `POST /onboarding/customer { cityId, name?, phone?, address? }` — fills in the rest of the
-  customer profile and sets `isOnboarded: true`.
-- Professionals (vendors) go through the step-by-step flow below instead.
+| # | Step | Endpoint |
+|---|---|---|
+| 1 | Phone number | `POST /otp/request { phone }` |
+| 2 | Verify OTP | `POST /otp/verify { phone, otp }` → tokens, the user, `flow`, `nextStep` |
+| 3 | Name & gender | `PUT /profile { name, gender, email?, dateOfBirth? }` |
+| 4 | Address | `PUT /address { line1, cityId, state, pincode, … }` → `isOnboarded: true` |
+
+`GET /customer-onboarding` returns the same state at any time; `nextStep` is `profile`,
+`address` or `null`. A number registered as a vendor or an admin is refused: one account has
+one role.
+
+### My account (`/users/me`)
+
+| Endpoint | What it does |
+|---|---|
+| `GET /users/me` | Profile, city, saved addresses |
+| `PATCH /users/me` | Edit name, gender, email, date of birth |
+| `PUT` / `DELETE /users/me/photo` | Profile photo (served at `GET /users/{id}/photo` to the user and admins) |
+| `POST /users/me/phone/request`, `/verify` | Change the login number, confirmed by an OTP sent to the new number |
+| `GET` / `POST /users/me/addresses` | List / add addresses (up to 10) |
+| `PATCH` / `DELETE /users/me/addresses/{id}`, `POST …/default` | Edit, delete, make default |
+| `DELETE /users/me` | Delete the account |
+
+One address is always the default; the user's `cityId` and one-line `address` mirror it.
+
+**Deleting an account** (by the user, or by a super admin with `DELETE /users/{id}`) keeps the
+row, because bookings and reviews reference it, but wipes everything personal — name, phone,
+email, password, photo, addresses, and for vendors their KYC documents and bank details — and
+sets `deletedAt`. Open booking requests are cancelled and AMC plans ended. It is refused while
+a booking is assigned or in progress. The phone and email can then register again as a new
+account. Deleted accounts are hidden from `GET /users` unless `deleted=true`.
+
+`GET /onboarding/status` remains as a role-agnostic "is this account set up?" check.
+
+### Onboarding validation switch
+
+`ONBOARDING_VALIDATION` controls how strict the customer and vendor onboarding endpoints are.
+
+- `off` (the default, for while the apps are being built): nothing a client sends is rejected
+  for being missing, malformed or against a rule. Every field is optional; phone, pincode,
+  age, Aadhaar, PAN, IFSC and UPI formats are not checked; images are optional and can be any
+  file; the same test numbers can be reused across accounts; a vendor can submit with parts
+  missing. A value the database cannot hold (an unknown city or zone id, an unparseable date,
+  an unknown gender or account type, an email already in use) is left out, not refused.
+- `strict`: every rule is enforced. **Set this before real users sign up.**
+
+The one input check that always applies is the **OTP: it must be 4 digits and match** the code
+that was sent.
+
+Not validation, so unchanged in both modes: you must be signed in and can only edit your own
+application; staff accounts cannot onboard; an application under review cannot be edited;
+uploads are capped at 5 MB. The review side (verify documents, approve) and account editing
+under `/users/me` are not affected either.
+
+The exact behaviour of each mode lives in `src/utils/onboardingValidation.js`; the strict rules
+are pinned by `vendorOnboarding.test.js` and `customerOnboarding.test.js`, the relaxed
+behaviour by `onboardingRelaxed.test.js`.
+
+## Booking flow
+
+The customer app walks through **service → date & time → problem description → payment** on
+its own screens, then sends everything in one request.
+
+| Step | Endpoint |
+|---|---|
+| Pick a service | `GET /categories` |
+| Create the booking | `POST /bookings { categoryId, scheduledAt, description, addressId?, paymentMode }` |
+| Pay online (only for `paymentMode: ONLINE`) | Open Razorpay Checkout with `checkout` from the response, then `POST /bookings/{id}/payment/confirm` |
+| Follow it | `GET /bookings?scope=upcoming`, `GET /bookings/{id}` (includes the timeline) |
+| Change it | `POST /bookings/{id}/reschedule`, `POST /bookings/{id}/cancel` — until work starts |
+
+```
+ONLINE:             AWAITING_PAYMENT ──paid──┐
+PAY_AFTER_SERVICE:  ─────────────────────────┴▶ PENDING ▶ MATCHING ▶ ASSIGNED ▶ IN_PROGRESS ▶ COMPLETED
+                    (anything before COMPLETED can be CANCELLED)
+```
+
+- The job address is one of the customer's saved addresses (their default unless `addressId`
+  is sent) and is **copied onto the booking**, so later edits or deletion of the saved address
+  never move a booked job.
+- The price is the service's base price. `scheduledAt` must be 60 minutes to 60 days ahead.
+- An online booking is not offered to professionals until it is paid. The app's confirm call
+  verifies Razorpay's signature; the webhook does the same job if the app never calls back.
+- Without Razorpay keys, dev and test hand out a stand-in order (`checkout.isTest: true`) that
+  confirms without real money; **production refuses online payment (503)** until keys are set,
+  so only pay-after-service works there.
+- Every booking has a reference (`BK-000123`), a `timeline` of everything that happened, and
+  an `actions` object saying what the caller may do right now.
+
+### Bookings for the operations team
+
+| Need | Endpoint |
+|---|---|
+| All bookings, with filters | `GET /bookings` — `status` (comma-separated), `scope`, `search` (reference, customer, address), `paymentStatus`, `paymentMode`, `categoryId`, `cityId`, `zoneId`, `customerId`, `professionalId`, `unassigned`, `scheduledFrom/To`, `createdFrom/To`, `sortBy`, `sortOrder` |
+| Headline numbers | `GET /bookings/summary` |
+| One booking with its timeline | `GET /bookings/{id}` |
+| Assign a professional | `GET /dispatch/bookings/{id}/candidates`, `POST /dispatch/bookings/{id}/assign` |
+| Move it along | `PATCH /bookings/{id}/status` (`MATCHING`, `IN_PROGRESS`, `COMPLETED`; the assigned professional can do the last two) |
+| Cancel / reschedule | `POST /bookings/{id}/cancel`, `POST /bookings/{id}/reschedule` |
+| Record cash/UPI collected | `POST /bookings/{id}/payment/collect` (assigned professional or admin) |
+| Record a refund | `POST /bookings/{id}/payment/refund` — records it only; issue the refund in Razorpay first |
+
+The same `GET /bookings` serves everyone: customers get their own, professionals their jobs,
+admins everything.
 
 ## Vendor onboarding
 
@@ -230,10 +331,11 @@ same endpoints as in their own sections, listed together):
 | Counts for status tabs | `GET /vendor-onboarding/applications/summary` — includes `awaitingFinalApproval` |
 | One vendor in full | `GET /vendor-onboarding/applications/{id}` (+ document and photo endpoints) |
 | Final decision | `POST /vendor-onboarding/applications/{id}/approve`, `/reject`, `/reopen`, `/request-changes` |
-| All users, with filters | `GET /users` — `role` (one or comma-separated), `search`, `cityId`, `isActive`, `isOnboarded`, `vendorStatus`, `createdFrom`/`createdTo`, `sortBy`, `sortOrder`, `page`, `limit` |
+| All users, with filters | `GET /users` — `role` (one or comma-separated), `search`, `gender`, `cityId`, `isActive`, `isOnboarded`, `deleted`, `vendorStatus`, `createdFrom`/`createdTo`, `sortBy`, `sortOrder`, `page`, `limit` |
 | User counts | `GET /users/summary` |
-| One user in full | `GET /users/{id}` — city, vendor status, usage counts |
-| Manage accounts | `POST /users`, `PATCH /users/{id}/active` |
+| One user in full | `GET /users/{id}` — city, addresses, vendor status, usage counts |
+| Edit / delete a user | `PATCH /users/{id}`, `DELETE /users/{id}` — super admin only |
+| Other account actions | `POST /users` (invite), `PATCH /users/{id}/active` |
 
 The vendor queue for the super admin is `status=PENDING_APPROVAL`. Lists and details are open
 to admins as well; approve, reject and reopen are super admin only.
@@ -311,6 +413,8 @@ schema, then move the schema to its own database instance. To keep that mechanic
 - OTP store is in-memory (see above) — move to Redis for multi-instance deployments.
 - Razorpay, Firebase, WhatsApp, Google Maps, and Cloudflare R2 are wired up with real client
   code but fall back to logged stubs without credentials — add keys to `.env` to go live.
+- Refunds are recorded, not sent: cancelling a paid booking marks its payment `REFUND_PENDING`
+  and an admin issues the refund in Razorpay, then records it.
 - Dispatch matching is rating-ranked, not geo/ETA-ranked — needs live professional location
   (Firebase presence + Google Maps) before it's real.
 - File uploads exist for KYC documents only (`modules/storage`); job photos are not built yet.

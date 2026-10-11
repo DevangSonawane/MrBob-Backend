@@ -2,6 +2,7 @@ const { z } = require('zod');
 const { paginationQuery } = require('../../utils/pagination');
 const { commaList, dateOnly, sortOrder } = require('../../utils/queryFilters');
 const { OTP_LENGTH } = require('../auth/otp.store');
+const { relaxed, looseText, looseNumber, looseList } = require('../../utils/onboardingValidation');
 
 const phoneSchema = z
   .string()
@@ -36,15 +37,24 @@ const documentTypeParam = typeParam(DOCUMENT_TYPES);
 
 const reason = z.string().trim().min(5, 'Give a reason of at least 5 characters').max(500);
 
+// With validation off a phone number is any text (it is only the account's
+// identifier). The OTP is the one thing always checked: the right number of digits.
+const loginPhone = relaxed ? z.coerce.string().trim().min(1, 'Phone number is required') : phoneSchema;
+const loginOtp = z.coerce.string().trim().regex(new RegExp(`^\\d{${OTP_LENGTH}}$`), `OTP must be ${OTP_LENGTH} digits`);
+
 const requestOtp = {
-  body: z.object({ phone: phoneSchema }),
+  body: z.object({ phone: loginPhone }),
 };
 
 const verifyOtp = {
-  body: z.object({ phone: phoneSchema, otp: z.string().regex(new RegExp(`^\\d{${OTP_LENGTH}}$`), `OTP must be ${OTP_LENGTH} digits`) }),
+  body: z.object({ phone: loginPhone, otp: loginOtp }),
 };
 
-const savePersonalDetails = {
+// The strict request schemas follow. Their relaxed counterparts (every field
+// optional, nothing checked) are at the bottom of this file and are what is
+// exported while ONBOARDING_VALIDATION is off.
+
+const strictPersonalDetails = {
   body: z
     .object({
       name: z.string().trim().min(2).max(100),
@@ -68,7 +78,7 @@ const savePersonalDetails = {
     }),
 };
 
-const saveServices = {
+const strictServices = {
   body: z.object({
     categories: z
       .array(z.uuid())
@@ -83,7 +93,7 @@ const saveServices = {
 // multipart/form-data: `number` and `nameOnDocument` as text fields, files as
 // `front` (and `back` for Aadhaar). The number's format is checked in the
 // service, where the document type is known.
-const saveDocument = {
+const strictDocument = {
   params: z.object({ type: typeParam(IDENTITY_DOCUMENT_TYPES) }),
   body: z.object({
     number: z.string().trim().min(8).max(20),
@@ -92,7 +102,7 @@ const saveDocument = {
 };
 
 // multipart/form-data, with the cancelled cheque / passbook page as `proof`.
-const saveBankDetails = {
+const strictBankDetails = {
   body: z.object({
     accountHolderName: z.string().trim().min(2).max(100),
     accountNumber: z
@@ -163,6 +173,51 @@ const requestChanges = {
     documents: z.array(z.enum(DOCUMENT_TYPES)).max(DOCUMENT_TYPES.length).default([]),
   }),
 };
+
+const relaxedPersonalDetails = {
+  body: z.object({
+    name: looseText,
+    dateOfBirth: looseText,
+    gender: looseText,
+    phone: looseText,
+    email: looseText,
+    alternatePhone: looseText,
+    cityId: looseText,
+    addressLine1: looseText,
+    addressLine2: looseText,
+    landmark: looseText,
+    pincode: looseText,
+    state: looseText,
+    emergencyContactName: looseText,
+    emergencyContactPhone: looseText,
+  }),
+};
+
+const relaxedServices = {
+  body: z.object({ categories: looseList, experienceYears: looseNumber, homeZoneId: looseText }),
+};
+
+const relaxedDocument = {
+  params: z.object({ type: typeParam(IDENTITY_DOCUMENT_TYPES) }),
+  body: z.object({ number: looseText, nameOnDocument: looseText }),
+};
+
+const relaxedBankDetails = {
+  body: z.object({
+    accountHolderName: looseText,
+    accountNumber: looseText,
+    ifsc: looseText,
+    bankName: looseText,
+    branchName: looseText,
+    accountType: looseText,
+    upiId: looseText,
+  }),
+};
+
+const savePersonalDetails = relaxed ? relaxedPersonalDetails : strictPersonalDetails;
+const saveServices = relaxed ? relaxedServices : strictServices;
+const saveDocument = relaxed ? relaxedDocument : strictDocument;
+const saveBankDetails = relaxed ? relaxedBankDetails : strictBankDetails;
 
 module.exports = {
   DOCUMENT_TYPES,

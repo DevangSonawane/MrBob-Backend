@@ -1,49 +1,41 @@
-const { ref, arrayOf, ok, paginated, jsonBody, pathParam, queryParam, pageParams, op } = require('../helpers');
-const { BOOKING_STATUSES } = require('../components');
+const { ref, arrayOf, ok, paginated, jsonBody, pathParam, queryParam, dateParam, sortParams, pageParams, op } = require('../helpers');
+const { examples } = require('../components');
 
 const CATEGORIES = 'Service categories';
-const BOOKINGS = 'Bookings';
+const FLOW = 'Booking flow';
+const ADMIN = 'Bookings (admin)';
+const SUPER_ADMIN = 'Super admin panel';
 const DISPATCH = 'Dispatch';
 const bookingId = pathParam('id', 'Booking id');
 
-const bookingDetail = {
-  allOf: [
-    ref('Booking'),
-    {
-      type: 'object',
-      properties: {
-        category: ref('ServiceCategory'),
-        payment: { allOf: [ref('Payment')], nullable: true },
-        professional: {
-          type: 'object',
-          nullable: true,
-          description: 'The assigned professional — only the fields a booking screen needs',
-          properties: {
-            id: { type: 'string', format: 'uuid' },
-            userId: { type: 'string', format: 'uuid' },
-            rating: { type: 'string', example: '4.80' },
-            user: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, name: { type: 'string', example: 'Ravi Kumar' }, phone: { type: 'string', nullable: true, example: '+919812345678' } } },
-          },
-        },
-      },
-    },
-  ],
-};
+const booking = ref('BookingDetail');
+const scheduledAt = { type: 'string', format: 'date-time', example: '2026-10-09T10:00:00+05:30', description: 'ISO date-time with a timezone offset' };
+const reasonBody = (description, example) =>
+  jsonBody({ type: 'object', required: ['reason'], properties: { reason: { type: 'string', minLength: 5, maxLength: 500, description } } }, { reason: example });
 
 module.exports = {
   tags: [
-    { name: CATEGORIES, description: 'The service catalogue (Electrician, Plumber, AC Repair…).' },
+    { name: CATEGORIES, description: 'The service catalogue (Electrician, Plumber, AC Repair…). Step one of a booking is picking one of these.' },
     {
-      name: BOOKINGS,
-      description: 'A booking moves `PENDING → MATCHING → ASSIGNED → IN_PROGRESS → COMPLETED`, and can be `CANCELLED` from any stage before completion.',
+      name: FLOW,
+      description:
+        'How a customer books a service. The app walks through **service → date & time → problem description → payment** on its own ' +
+        'screens, then sends everything in **one** request. Online payment is confirmed with one more call; pay-after-service needs nothing more.',
+    },
+    {
+      name: ADMIN,
+      description:
+        'Everything the operations team needs to watch and manage bookings: the full list with filters, headline counts, the detail with its ' +
+        'timeline, and the actions (move along, cancel, reschedule, record a payment or a refund). Assigning a professional is under **Dispatch**.',
     },
     { name: DISPATCH, description: 'Matching a booking to a verified professional.' },
   ],
   paths: {
     '/categories': {
       get: op({
-        tag: CATEGORIES,
-        summary: 'List active service categories',
+        tag: [CATEGORIES, FLOW],
+        summary: 'List services to choose from',
+        description: 'Active service categories with their price. The first screen of the booking flow.',
         access: 'public',
         responses: { 200: ok('Active categories, by name', arrayOf(ref('ServiceCategory'))) },
       }),
@@ -62,60 +54,235 @@ module.exports = {
         responses: { 201: ok('Category created', ref('ServiceCategory')) },
       }),
     },
+
     '/bookings': {
       post: op({
-        tag: BOOKINGS,
-        summary: 'Create a booking',
-        description: 'The price is taken from the category\'s base price. Returns **400** for an unknown or inactive category.',
+        tag: FLOW,
+        summary: 'Create a booking (the whole flow in one request)',
+        description:
+          'Send what the customer chose on each screen:\n\n' +
+          '| Screen | Field |\n|---|---|\n' +
+          '| Service | `categoryId` |\n' +
+          '| Date & time | `scheduledAt` — at least 60 minutes from now, at most 60 days ahead |\n' +
+          '| Problem description | `description` — 10 to 1000 characters |\n' +
+          '| Address | `addressId` — one of the customer\'s saved addresses; their default if left out |\n' +
+          '| Payment | `paymentMode` — `ONLINE` or `PAY_AFTER_SERVICE` |\n\n' +
+          'The price is the service\'s base price. The address is copied onto the booking, so editing or deleting the saved address later ' +
+          'does not change where a booked job takes place.\n\n' +
+          '**What comes back**\n' +
+          '- `PAY_AFTER_SERVICE`: the booking is `PENDING` (confirmed) straight away. Nothing more to do.\n' +
+          '- `ONLINE`: the booking is `AWAITING_PAYMENT` and `checkout` holds the gateway order. Open Razorpay Checkout with it, then call ' +
+          '**Confirm online payment**. The booking is not sent to professionals until it is paid.\n\n' +
+          'Returns **400** if the customer has no saved address, the service is inactive, or the time is out of range; **503** if online ' +
+          'payment is chosen but the server has no payment gateway configured.',
         access: 'CUSTOMER',
         body: jsonBody(
           {
             type: 'object',
-            required: ['categoryId', 'address'],
+            required: ['categoryId', 'scheduledAt', 'description', 'paymentMode'],
             properties: {
-              categoryId: { type: 'string', format: 'uuid' },
-              address: { type: 'string', minLength: 5 },
-              scheduledAt: { type: 'string', format: 'date-time' },
-              partnerId: { type: 'string', format: 'uuid', description: 'Set when the booking comes through a builder / RWA partner' },
+              categoryId: { type: 'string', format: 'uuid', description: 'From GET /categories' },
+              scheduledAt,
+              description: { type: 'string', minLength: 10, maxLength: 1000 },
+              addressId: { type: 'string', format: 'uuid', description: 'From GET /users/me/addresses. Defaults to the default address.' },
+              paymentMode: { type: 'string', enum: ['ONLINE', 'PAY_AFTER_SERVICE'] },
+              partnerId: { type: 'string', format: 'uuid', description: 'Only when the booking comes through a builder / RWA partner' },
             },
           },
-          { categoryId: '3f2e1d0c-2222-4b3a-8c7d-6e5f4a3b2c1d', address: '12, 4th Cross, Koramangala, Bengaluru', scheduledAt: '2026-10-08T04:30:00.000Z' },
+          {
+            categoryId: '3f2e1d0c-2222-4b3a-8c7d-6e5f4a3b2c1d',
+            scheduledAt: '2026-10-09T10:00:00+05:30',
+            description: 'The kitchen switchboard sparks when the mixer is plugged in.',
+            addressId: examples.address.id,
+            paymentMode: 'ONLINE',
+          },
         ),
-        responses: { 201: ok('Booking created', ref('Booking')) },
+        responses: { 201: ok('Booking created', booking, examples.booking('awaitingPayment')) },
+        errors: [503],
       }),
       get: op({
-        tag: BOOKINGS,
+        tag: [FLOW, ADMIN, SUPER_ADMIN],
         summary: 'List bookings',
-        description: 'Customers see their own bookings, professionals the ones assigned to them, admins all of them.',
-        params: [queryParam('status', 'Only bookings in this status', { type: 'string', enum: BOOKING_STATUSES }), ...pageParams],
+        description:
+          '**Customers** get their own bookings, **professionals** the jobs assigned to them, **admins** every booking.\n\n' +
+          'Everyone can use `status`, `scope`, sorting and paging. The remaining filters are for admins and are ignored for other callers. ' +
+          'All filters combine (AND).\n\n' +
+          '**Admin examples**\n' +
+          '- Needs a professional: `status=PENDING,MATCHING`\n' +
+          '- Today\'s jobs: `scheduledFrom=2026-10-07&scheduledTo=2026-10-07&sortBy=scheduledAt&sortOrder=asc`\n' +
+          '- Refunds to issue: `paymentStatus=REFUND_PENDING`\n' +
+          '- One customer\'s history: `customerId=…`\n' +
+          '- Find by reference: `search=BK-000123`',
+        params: [
+          queryParam('status', 'One status, or several separated by commas. One of: AWAITING_PAYMENT, PENDING, MATCHING, ASSIGNED, IN_PROGRESS, COMPLETED, CANCELLED', { type: 'string', example: 'PENDING,MATCHING' }),
+          queryParam('scope', '`upcoming` = not finished yet, `past` = completed or cancelled. Ignored when `status` is given.', { type: 'string', enum: ['upcoming', 'past'] }),
+          queryParam('search', 'Admin: a booking reference (`BK-000123` matches that booking only), or customer name / phone / email, or part of the address'),
+          queryParam('paymentStatus', 'Admin: `UNPAID` means no payment recorded yet', { type: 'string', enum: ['UNPAID', 'CREATED', 'PENDING', 'SUCCESS', 'FAILED', 'REFUND_PENDING', 'REFUNDED'] }),
+          queryParam('paymentMode', 'Admin', { type: 'string', enum: ['ONLINE', 'PAY_AFTER_SERVICE'] }),
+          queryParam('categoryId', 'Admin: only this service', { type: 'string', format: 'uuid' }),
+          queryParam('cityId', 'Admin: only jobs in this city', { type: 'string', format: 'uuid' }),
+          queryParam('zoneId', 'Admin: only jobs in this zone', { type: 'string', format: 'uuid' }),
+          queryParam('customerId', 'Admin: only this customer\'s bookings', { type: 'string', format: 'uuid' }),
+          queryParam('professionalId', 'Admin: only this professional\'s jobs', { type: 'string', format: 'uuid' }),
+          queryParam('unassigned', 'Admin: `true` for bookings with no professional yet', { type: 'string', enum: ['true'] }),
+          dateParam('scheduledFrom', 'Admin: scheduled on or after this date'),
+          dateParam('scheduledTo', 'Admin: scheduled on or before this date'),
+          dateParam('createdFrom', 'Admin: booked on or after this date'),
+          dateParam('createdTo', 'Admin: booked on or before this date'),
+          ...sortParams(['createdAt', 'scheduledAt', 'price'], 'createdAt', 'desc'),
+          ...pageParams,
+        ],
+        responses: { 200: paginated('A page of bookings', ref('Booking')) },
+      }),
+    },
+
+    '/bookings/summary': {
+      get: op({
+        tag: [ADMIN, SUPER_ADMIN],
+        summary: 'Booking counts and totals',
+        description: 'Headline numbers for the bookings dashboard: how many are in each status, what needs attention, and money collected.',
+        access: 'ADMIN',
         responses: {
-          200: paginated('A page of bookings, newest first', { allOf: [ref('Booking'), { type: 'object', properties: { category: ref('ServiceCategory') } }] }),
+          200: ok('Summary', ref('BookingSummary'), {
+            total: 964,
+            byStatus: { AWAITING_PAYMENT: 6, PENDING: 84, MATCHING: 31, ASSIGNED: 76, IN_PROGRESS: 42, COMPLETED: 681, CANCELLED: 44 },
+            scheduledToday: 37,
+            waitingForProfessional: 115,
+            awaitingPayment: 6,
+            refundsPending: 3,
+            completedUnpaid: 4,
+            amountCollected: 248730,
+          }),
         },
       }),
     },
+
     '/bookings/{id}': {
       get: op({
-        tag: BOOKINGS,
+        tag: [FLOW, ADMIN, SUPER_ADMIN],
         summary: 'Get a booking',
-        description: 'Available to the booking\'s customer, its assigned professional, and admins (otherwise **403**).',
+        description:
+          'The booking with its full timeline. Available to its customer, its assigned professional, and admins (otherwise **403**). ' +
+          'Professionals and admins also get the `customer`. While an online booking is unpaid, the customer gets `checkout` again here, ' +
+          'so an interrupted payment can be resumed.',
         params: [bookingId],
-        responses: { 200: ok('The booking', bookingDetail) },
+        responses: { 200: ok('The booking', booking, examples.booking('assigned', 'admin')) },
         errors: [403, 404],
       }),
     },
+
+    '/bookings/{id}/payment/confirm': {
+      post: op({
+        tag: FLOW,
+        summary: 'Confirm online payment',
+        description:
+          'Call this with the three values Razorpay Checkout returns on success. The server verifies the signature, marks the payment ' +
+          'successful and moves the booking from `AWAITING_PAYMENT` to `PENDING`.\n\n' +
+          'Safe to call twice. If the app never gets to call it (closed mid-payment), the gateway\'s webhook confirms the payment instead, ' +
+          'so check the booking\'s status before asking the customer to pay again.\n\n' +
+          '**Without gateway keys (development):** `checkout.isTest` is true and any values are accepted as long as `razorpayOrderId` ' +
+          'matches `checkout.orderId`.\n\n' +
+          'Returns **400** if the signature is wrong or the order does not belong to this booking, **409** if the booking was cancelled.',
+        access: 'CUSTOMER',
+        params: [bookingId],
+        body: jsonBody(
+          {
+            type: 'object',
+            required: ['razorpayOrderId', 'razorpayPaymentId', 'razorpaySignature'],
+            properties: { razorpayOrderId: { type: 'string' }, razorpayPaymentId: { type: 'string' }, razorpaySignature: { type: 'string' } },
+          },
+          { razorpayOrderId: 'order_Pq1x2y3z4A5b6C', razorpayPaymentId: 'pay_Pq9z8y7x6W5v4U', razorpaySignature: '9ef4dffbfd84f1318f6739a3ce19f9d85851857ae648f114332d8401e0949a3d' },
+        ),
+        responses: { 200: ok('Paid — the booking is now confirmed', booking, examples.booking('pending')) },
+        errors: [403, 404, 409],
+      }),
+    },
+
+    '/bookings/{id}/cancel': {
+      post: op({
+        tag: [FLOW, ADMIN],
+        summary: 'Cancel a booking',
+        description:
+          'A **customer** can cancel their own booking until work starts (`AWAITING_PAYMENT`, `PENDING`, `MATCHING`, `ASSIGNED`). ' +
+          'An **admin** can cancel any booking that is not already completed or cancelled. Otherwise **409**.\n\n' +
+          'If the booking was paid online, its payment becomes `REFUND_PENDING` for the team to refund.',
+        access: ['CUSTOMER', 'ADMIN'],
+        params: [bookingId],
+        body: reasonBody('Why it is being cancelled', 'Plans changed, will rebook next week'),
+        responses: { 200: ok('Cancelled booking', booking, examples.booking('cancelled')) },
+        errors: [404, 409],
+      }),
+    },
+
+    '/bookings/{id}/reschedule': {
+      post: op({
+        tag: [FLOW, ADMIN],
+        summary: 'Change the date and time',
+        description:
+          'Allowed until work starts, by the customer or an admin. The same limits as booking apply (60 minutes to 60 days ahead). ' +
+          'An assigned professional stays assigned and is notified.',
+        access: ['CUSTOMER', 'ADMIN'],
+        params: [bookingId],
+        body: jsonBody({ type: 'object', required: ['scheduledAt'], properties: { scheduledAt } }, { scheduledAt: '2026-10-10T16:30:00+05:30' }),
+        responses: { 200: ok('Rescheduled booking', booking, { ...examples.booking('pending'), scheduledAt: '2026-10-10T11:00:00.000Z' }) },
+        errors: [404, 409],
+      }),
+    },
+
     '/bookings/{id}/status': {
       patch: op({
-        tag: BOOKINGS,
-        summary: 'Move a booking to its next status',
-        description: 'Returns **400** if the transition is not allowed from the booking\'s current status.',
+        tag: ADMIN,
+        summary: 'Move a booking along',
+        description:
+          'An **admin** can set `MATCHING`, `IN_PROGRESS` or `COMPLETED`; the **assigned professional** can set `IN_PROGRESS` (work started) ' +
+          'and `COMPLETED` (work done) on their own jobs.\n\n' +
+          'Allowed moves: `PENDING → MATCHING`, `ASSIGNED → IN_PROGRESS`, `IN_PROGRESS → COMPLETED`; anything else is **400**. ' +
+          'Assigning a professional is done through **Dispatch**, cancelling through **Cancel a booking**, and payment through its own endpoints.',
         access: ['PROFESSIONAL', 'ADMIN'],
         params: [bookingId],
         body: jsonBody(
-          { type: 'object', required: ['status'], properties: { status: { type: 'string', enum: BOOKING_STATUSES.filter((status) => status !== 'PENDING') } } },
+          {
+            type: 'object',
+            required: ['status'],
+            properties: { status: { type: 'string', enum: ['MATCHING', 'IN_PROGRESS', 'COMPLETED'] }, note: { type: 'string', maxLength: 500, description: 'Optional note for the timeline' } },
+          },
           { status: 'IN_PROGRESS' },
         ),
-        responses: { 200: ok('Updated booking', ref('Booking')) },
-        errors: [404],
+        responses: { 200: ok('Updated booking', booking, { ...examples.booking('assigned', 'admin'), status: 'IN_PROGRESS', startedAt: '2026-10-09T04:35:00.000Z' }) },
+        errors: [404, 409],
+      }),
+    },
+
+    '/bookings/{id}/payment/collect': {
+      post: op({
+        tag: ADMIN,
+        summary: 'Record payment collected in person',
+        description:
+          'For `PAY_AFTER_SERVICE` bookings, once the job is `IN_PROGRESS` or `COMPLETED`: records that the professional took the money. ' +
+          'By the assigned professional or an admin. Returns **409** if it was already collected or the job has not started.',
+        access: ['PROFESSIONAL', 'ADMIN'],
+        params: [bookingId],
+        body: jsonBody({ type: 'object', required: ['method'], properties: { method: { type: 'string', enum: ['CASH', 'UPI', 'CARD'] } } }, { method: 'UPI' }),
+        responses: { 200: ok('Updated booking', booking) },
+        errors: [404, 409],
+      }),
+    },
+
+    '/bookings/{id}/payment/refund': {
+      post: op({
+        tag: ADMIN,
+        summary: 'Mark a refund as issued',
+        description:
+          'For a cancelled booking whose payment is `REFUND_PENDING`. **This records the refund; it does not send money** — issue the refund ' +
+          'in the payment gateway first, then record its reference here. Otherwise **409**.',
+        access: 'ADMIN',
+        params: [bookingId],
+        body: jsonBody(
+          { type: 'object', required: ['reference'], properties: { reference: { type: 'string', minLength: 3, maxLength: 200, description: 'Gateway refund id, or a note on how it was refunded' } } },
+          { reference: 'rfnd_Pr4s5t6u7V8w9X' },
+        ),
+        responses: { 200: ok('Updated booking', booking) },
+        errors: [404, 409],
       }),
     },
     '/dispatch/bookings/{id}/candidates': {
@@ -123,7 +290,7 @@ module.exports = {
         tag: DISPATCH,
         summary: 'Find professionals for a booking',
         description:
-          'Up to 10 verified professionals who serve the booking\'s category, best rated first. A `PENDING` booking becomes `MATCHING`. ' +
+          'Up to 10 verified, active professionals who serve the booking\'s category, best rated first. A `PENDING` booking becomes `MATCHING`. ' +
           'Returns **400** if the booking is already assigned or finished.',
         access: 'ADMIN',
         params: [bookingId],
@@ -139,7 +306,7 @@ module.exports = {
         access: 'ADMIN',
         params: [bookingId],
         body: jsonBody({ type: 'object', required: ['professionalId'], properties: { professionalId: { type: 'string', format: 'uuid' } } }, { professionalId: '8c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f' }),
-        responses: { 200: ok('Booking, now `ASSIGNED`', ref('Booking')) },
+        responses: { 200: ok('Booking, now `ASSIGNED`', booking, examples.booking('assigned', 'admin')) },
         errors: [404],
       }),
     },

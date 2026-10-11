@@ -38,8 +38,8 @@ describe('API documentation', () => {
       'POST /vendor-onboarding/submit',
       'POST /vendor-onboarding/applications/{id}/documents/{type}/verify',
       'POST /vendor-onboarding/applications/{id}/approve',
-      'POST /payments/bookings/{bookingId}/order',
       'POST /amc/{id}/cancel',
+      'POST /users/me/addresses/{addressId}/default',
     ];
     Object.entries(spec.paths).forEach(([path, methods]) => {
       Object.entries(methods).forEach(([method, operation]) => {
@@ -63,8 +63,17 @@ describe('API documentation', () => {
     expect(JSON.stringify(spec.servers)).not.toContain('localhost');
   });
 
-  it('lists the vendor onboarding steps first and in order', () => {
-    expect(spec.tags.slice(0, 5).map((tag) => tag.name)).toEqual([
+  it('lists the customer steps, then the vendor steps, first and in order', () => {
+    expect(spec.tags.slice(0, 14).map((tag) => tag.name)).toEqual([
+      'Customer onboarding · Step 1 – Phone number',
+      'Customer onboarding · Step 2 – Verify OTP',
+      'Customer onboarding · Step 3 – Name & gender',
+      'Customer onboarding · Step 4 – Address',
+      'My account',
+      'Service categories',
+      'Booking flow',
+      'Bookings (admin)',
+      'Dispatch',
       'Vendor onboarding · Step 1 – Phone number',
       'Vendor onboarding · Step 2 – Verify OTP',
       'Vendor onboarding · Step 3 – Enter details',

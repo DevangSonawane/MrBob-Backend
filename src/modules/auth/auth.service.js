@@ -31,6 +31,7 @@ const verifyOtpAndLogin = async (phone, otp, name) => {
     throw ApiError.forbidden('This account has been deactivated');
   }
 
+  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
   const tokens = issueTokenPair(user);
   return { user, ...tokens };
 };
@@ -72,6 +73,7 @@ const loginWithEmail = async (email, password) => {
     throw ApiError.forbidden('This account has been deactivated');
   }
 
+  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
   const tokens = issueTokenPair(user);
   return { user, ...tokens };
 };
@@ -97,7 +99,7 @@ const getProfile = async (userId) => {
     where: { id: userId },
     include: { professional: true },
   });
-  if (!user) throw ApiError.notFound('User not found');
+  if (!user || user.deletedAt) throw ApiError.notFound('User not found');
   return user;
 };
 

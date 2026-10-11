@@ -14,7 +14,7 @@ const MAX_CANDIDATES = 10;
 // booking's category, same home zone if the booking has one, ranked by
 // rating. Replace with real geo-distance / live-ETA ranking (Google Maps +
 // Firebase presence) once professional live location is wired up.
-const findCandidates = async (bookingId) => {
+const findCandidates = async (bookingId, actor) => {
   const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { category: true } });
   if (!booking) throw ApiError.notFound('Booking not found');
   if (!['PENDING', 'MATCHING'].includes(booking.status)) {
@@ -25,6 +25,7 @@ const findCandidates = async (bookingId) => {
     where: {
       kycStatus: 'VERIFIED',
       categories: { has: booking.categoryId },
+      user: { isActive: true },
     },
     orderBy: { rating: 'desc' },
     take: MAX_CANDIDATES,
@@ -32,13 +33,16 @@ const findCandidates = async (bookingId) => {
   });
 
   if (booking.status === 'PENDING') {
-    await prisma.booking.update({ where: { id: bookingId }, data: { status: 'MATCHING' } });
+    await prisma.$transaction([
+      prisma.booking.update({ where: { id: bookingId }, data: { status: 'MATCHING' } }),
+      prisma.bookingEvent.create({ data: { bookingId, type: 'STATUS_CHANGED', actorId: actor?.id ?? null, actorRole: actor ? 'ADMIN' : 'SYSTEM', fromStatus: 'PENDING', toStatus: 'MATCHING' } }),
+    ]);
   }
 
   return candidates;
 };
 
-const assign = async (bookingId, professionalId) => {
+const assign = async (bookingId, professionalId, actor) => {
   const [booking, professional] = await Promise.all([
     prisma.booking.findUnique({ where: { id: bookingId } }),
     prisma.professional.findUnique({ where: { id: professionalId } }),
@@ -56,9 +60,15 @@ const assign = async (bookingId, professionalId) => {
     throw ApiError.badRequest('Professional does not serve this category');
   }
 
-  return prisma.booking.update({
-    where: { id: bookingId },
-    data: { professionalId, status: 'ASSIGNED' },
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.booking.update({
+      where: { id: bookingId },
+      data: { professionalId, status: 'ASSIGNED', assignedAt: new Date() },
+    });
+    await tx.bookingEvent.create({
+      data: { bookingId, type: 'ASSIGNED', actorId: actor?.id ?? null, actorRole: actor ? 'ADMIN' : 'SYSTEM', fromStatus: booking.status, toStatus: 'ASSIGNED' },
+    });
+    return updated;
   });
 };
 

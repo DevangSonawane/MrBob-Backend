@@ -1,5 +1,6 @@
 const multer = require('multer');
 const ApiError = require('../utils/ApiError');
+const { relaxed } = require('../utils/onboardingValidation');
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
@@ -12,7 +13,9 @@ const FILE_TYPES = {
   'application/pdf': { ext: 'pdf', matches: (b) => b.subarray(0, 5).toString() === '%PDF-' },
 };
 
-const extensionFor = (mimeType) => FILE_TYPES[mimeType].ext;
+const UNKNOWN_TYPE = 'application/octet-stream';
+
+const extensionFor = (mimeType) => FILE_TYPES[mimeType]?.ext ?? 'bin';
 
 // Usage: uploadFiles(['front', 'back']) — accepts at most one file per named
 // field, kept in memory as req.files.<field>[0]. Run before validate(), since
@@ -34,7 +37,15 @@ const uploadFiles = (fieldNames, { imagesOnly = false } = {}) => {
 
       for (const [field, [file]] of Object.entries(req.files ?? {})) {
         const type = FILE_TYPES[file.mimetype];
-        const allowed = type && type.matches(file.buffer) && !(imagesOnly && file.mimetype === 'application/pdf');
+        const genuine = type && type.matches(file.buffer);
+        const allowed = genuine && !(imagesOnly && file.mimetype === 'application/pdf');
+        if (relaxed) {
+          // Onboarding validation off: any file is accepted. One that isn't a
+          // real image or PDF is stored as an opaque download, never as
+          // something a browser would render.
+          if (!genuine) file.mimetype = UNKNOWN_TYPE;
+          continue;
+        }
         if (!allowed) {
           return next(ApiError.badRequest(`"${field}" must be a JPEG, PNG${imagesOnly ? ' or WebP image' : ', WebP or PDF file'}`));
         }

@@ -4,13 +4,8 @@ const logger = require('../../config/logger');
 const service = require('./payments.service');
 const razorpay = require('./razorpay.client');
 
-const createOrderForBooking = catchAsync(async (req, res) => {
-  const result = await service.createOrderForBooking(req.params.bookingId);
-  res.status(201).json({ success: true, data: result });
-});
-
 const getById = catchAsync(async (req, res) => {
-  const payment = await service.getById(req.params.id);
+  const payment = await service.getById(req.params.id, req.user);
   res.status(200).json({ success: true, data: payment });
 });
 
@@ -31,14 +26,10 @@ const webhook = catchAsync(async (req, res) => {
   logger.info({ event, orderId: entity?.order_id }, 'Razorpay webhook received');
 
   if (entity?.order_id) {
-    if (event === 'payment.captured') {
-      await service.markStatusByGatewayRef(entity.order_id, 'SUCCESS');
-    } else if (event === 'payment.failed') {
-      await service.markStatusByGatewayRef(entity.order_id, 'FAILED');
-    }
+    await service.handleGatewayEvent({ event, orderId: entity.order_id, paymentId: entity.id });
   }
 
   res.status(200).json({ success: true });
 });
 
-module.exports = { createOrderForBooking, getById, webhook };
+module.exports = { getById, webhook };

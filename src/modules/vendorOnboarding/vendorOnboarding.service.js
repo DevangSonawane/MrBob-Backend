@@ -11,6 +11,7 @@ const { extensionFor } = require('../../middlewares/upload');
 const storage = require('../storage/storage.service');
 const notifications = require('../notifications/notifications.service');
 const kycVerification = require('./kycVerification.service');
+const { relaxed, parseLooseDate, parseLooseEnum } = require('../../utils/onboardingValidation');
 const otpStore = require('../auth/otp.store');
 const { issueTokenPair } = require('../auth/token.util');
 
@@ -123,14 +124,14 @@ const documentView = (application, type, { filesBasePath, revealNumber }) => {
   return {
     type,
     status: doc.status,
-    maskedNumber: kycCrypto.maskNumber(type, doc.numberLast4),
+    maskedNumber: doc.numberLast4 ? kycCrypto.maskNumber(type, doc.numberLast4) : null,
     ...(revealNumber && { number: kycCrypto.decrypt(doc.numberEncrypted) }),
     nameOnDocument: doc.nameOnDocument,
     rejectionReason: doc.rejectionReason,
     verifiedAt: doc.verifiedAt,
     ...(revealNumber && { verificationSource: doc.verificationSource, verificationRef: doc.verificationRef, verifiedBy: doc.verifiedBy }),
     // Authenticated API paths (relative to the API base), not public URLs.
-    files: { front: filePath('front'), back: doc.backFileKey ? filePath('back') : null },
+    files: { front: doc.frontFileKey ? filePath('front') : null, back: doc.backFileKey ? filePath('back') : null },
     uploadedAt: doc.updatedAt,
   };
 };
@@ -142,7 +143,7 @@ const bankDetailsView = (application, { filesBasePath, revealNumber }) => {
   return {
     status: doc.status,
     accountHolderName: doc.nameOnDocument,
-    maskedAccountNumber: kycCrypto.maskNumber('BANK_ACCOUNT', doc.numberLast4),
+    maskedAccountNumber: doc.numberLast4 ? kycCrypto.maskNumber('BANK_ACCOUNT', doc.numberLast4) : null,
     ...(revealNumber && { accountNumber: kycCrypto.decrypt(doc.numberEncrypted) }),
     ifsc: doc.ifsc,
     bankName: doc.bankName,
@@ -152,7 +153,7 @@ const bankDetailsView = (application, { filesBasePath, revealNumber }) => {
     rejectionReason: doc.rejectionReason,
     verifiedAt: doc.verifiedAt,
     ...(revealNumber && { verificationSource: doc.verificationSource, verificationRef: doc.verificationRef, verifiedBy: doc.verifiedBy }),
-    proofFile: `${filesBasePath}/bank_account/files/front`,
+    proofFile: doc.frontFileKey ? `${filesBasePath}/bank_account/files/front` : null,
     uploadedAt: doc.updatedAt,
   };
 };
@@ -177,7 +178,7 @@ const buildView = async (application, { admin = false } = {}) => {
     detailSteps: steps,
     // What the app should show next within step 3: the first unfinished part, then "submit".
     nextStep: isEditable ? (steps.find((step) => !step.complete)?.key ?? 'submit') : null,
-    canSubmit: isEditable && allComplete,
+    canSubmit: isEditable && (allComplete || relaxed),
     reviewNote: application.reviewNote ?? null,
     submittedAt: application.submittedAt ?? null,
     reviewedAt: application.reviewedAt ?? null,
@@ -272,9 +273,7 @@ const verifyOtp = async (phone, otp) => {
   if (!otpStore.verifyOtp(phone, otp)) throw ApiError.badRequest('Invalid or expired OTP');
 
   let user = existing ?? (await prisma.user.create({ data: { phone, name: 'New Vendor', role: 'PROFESSIONAL' } }));
-  if (user.role !== 'PROFESSIONAL') {
-    user = await prisma.user.update({ where: { id: user.id }, data: { role: 'PROFESSIONAL' } });
-  }
+  user = await prisma.user.update({ where: { id: user.id }, data: { role: 'PROFESSIONAL', lastLoginAt: new Date() } });
   await prisma.professional.upsert({ where: { userId: user.id }, update: {}, create: { userId: user.id, categories: [] } });
 
   return {
@@ -326,7 +325,47 @@ const ageOn = (dateOfBirth, today) => {
   return hadBirthday ? age : age - 1;
 };
 
+// Validation off helpers: a value the database cannot hold is dropped, not refused.
+const existingId = async (model, id) => (id && (await prisma[model].findUnique({ where: { id } })) ? id : null);
+const freeEmail = async (email, user) =>
+  email && email !== user.email && !(await prisma.user.findUnique({ where: { email } })) ? email : null;
+
+// Validation off: store whatever was sent.
+const savePersonalDetailsRelaxed = async (userId, body) => {
+  const application = await getEditableDraft(userId);
+  const { user } = application;
+
+  const cityId = await existingId('city', body.cityId);
+  const email = await freeEmail(body.email, user);
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: userId },
+      // Name, city and email keep their current value when left out.
+      data: { ...(body.name && { name: body.name }), ...(cityId && { cityId }), ...(email && { email }) },
+    }),
+    prisma.professional.update({
+      where: { id: application.id },
+      data: {
+        dateOfBirth: parseLooseDate(body.dateOfBirth),
+        gender: parseLooseEnum(body.gender, ['MALE', 'FEMALE', 'OTHER']),
+        alternatePhone: body.alternatePhone,
+        addressLine1: body.addressLine1,
+        addressLine2: body.addressLine2,
+        landmark: body.landmark,
+        pincode: body.pincode,
+        state: body.state,
+        emergencyContactName: body.emergencyContactName,
+        emergencyContactPhone: body.emergencyContactPhone,
+      },
+    }),
+  ]);
+
+  return buildView(await loadByUserId(userId));
+};
+
 const savePersonalDetails = async (userId, body) => {
+  if (relaxed) return savePersonalDetailsRelaxed(userId, body);
   const application = await getEditableDraft(userId);
   const { user } = application;
 
@@ -392,13 +431,19 @@ const assertZoneInCity = async (homeZoneId, cityId) => {
   if (cityId && zone.cityId !== cityId) throw ApiError.badRequest('Home zone must be in your city');
 };
 
-const saveServices = async (userId, { categories, experienceYears, homeZoneId }) => {
+const saveServices = async (userId, { categories, experienceYears, homeZoneId: requestedZoneId }) => {
+  let homeZoneId = requestedZoneId;
   const application = await getEditableDraft(userId);
 
-  const activeCount = await prisma.serviceCategory.count({ where: { id: { in: categories }, isActive: true } });
-  if (activeCount !== categories.length) throw ApiError.badRequest('One or more selected services are unknown or inactive');
+  if (relaxed) {
+    // An unknown zone id cannot be stored (it is a foreign key), so it is dropped.
+    homeZoneId = await existingId('zone', homeZoneId);
+  } else {
+    const activeCount = await prisma.serviceCategory.count({ where: { id: { in: categories }, isActive: true } });
+    if (activeCount !== categories.length) throw ApiError.badRequest('One or more selected services are unknown or inactive');
 
-  if (homeZoneId) await assertZoneInCity(homeZoneId, application.user.cityId);
+    if (homeZoneId) await assertZoneInCity(homeZoneId, application.user.cityId);
+  }
 
   await prisma.professional.update({ where: { id: application.id }, data: { categories, experienceYears, homeZoneId } });
   return buildView(await loadByUserId(userId));
@@ -420,10 +465,13 @@ const saveDocument = async (userId, type, { number: rawNumber, nameOnDocument },
     throw ApiError.conflict(`Your ${DOCUMENT_LABEL[type]} is already verified and cannot be replaced`);
   }
 
-  const number = normalizeDocumentNumber(type, rawNumber);
   const front = files.front?.[0];
   const back = files.back?.[0];
 
+  // Validation off: any number (or none), any combination of images.
+  if (relaxed) return storeDocument(application, type, { number: rawNumber ?? '', nameOnDocument, front, back });
+
+  const number = normalizeDocumentNumber(type, rawNumber);
   if (!front && !existing) throw ApiError.badRequest(`Upload a photo of the front of your ${DOCUMENT_LABEL[type]} as "front"`);
   if (type === 'AADHAAR' && !back && !existing?.backFileKey) {
     throw ApiError.badRequest('Upload a photo of the back of your Aadhaar card as "back"');
@@ -438,7 +486,9 @@ const saveDocument = async (userId, type, { number: rawNumber, nameOnDocument },
 // across accounts is judged on; `details` are extra columns to set.
 const storeDocument = async (application, type, { number, hashInput = number, nameOnDocument, details = {}, front, back }) => {
   const existing = application.documents.find((doc) => doc.type === type);
-  const numberHash = kycCrypto.hashNumber(type, hashInput);
+  // Validation off: the same test number may be used on any number of
+  // accounts, so the hash is made unique per account instead of per number.
+  const numberHash = kycCrypto.hashNumber(type, relaxed ? `${application.id}:${hashInput}` : hashInput);
   const duplicateMessage = `This ${DOCUMENT_LABEL[type]} is already registered with another account`;
   const usedElsewhere = await prisma.professionalDocument.findFirst({ where: { type, numberHash, professionalId: { not: application.id } } });
   if (usedElsewhere) throw ApiError.conflict(duplicateMessage);
@@ -458,6 +508,8 @@ const storeDocument = async (application, type, { number, hashInput = number, na
     nameOnDocument,
     ...details,
     ...(frontKey && { frontFileKey: frontKey, frontFileMime: front.mimetype }),
+    // Only reachable with validation off: a document saved with no image yet.
+    ...(!frontKey && !existing && { frontFileKey: '', frontFileMime: '' }),
     ...(backKey && { backFileKey: backKey, backFileMime: back.mimetype }),
     // Any change puts the document back in the verification queue.
     status: 'PENDING',
@@ -484,7 +536,7 @@ const storeDocument = async (application, type, { number, hashInput = number, na
   }
 
   // The replaced images are no longer referenced.
-  if (frontKey && existing) await storage.remove(existing.frontFileKey);
+  if (frontKey && existing?.frontFileKey) await storage.remove(existing.frontFileKey);
   if (backKey && existing?.backFileKey) await storage.remove(existing.backFileKey);
 
   return buildView(await loadByUserId(application.userId));
@@ -496,6 +548,22 @@ const saveBankDetails = async (userId, body, files = {}) => {
   if (existing?.status === 'VERIFIED') throw ApiError.conflict('Your bank account is already verified and cannot be replaced');
 
   const proof = files.proof?.[0];
+
+  if (relaxed) {
+    return storeDocument(application, 'BANK_ACCOUNT', {
+      number: body.accountNumber ?? '',
+      nameOnDocument: body.accountHolderName,
+      details: {
+        ifsc: body.ifsc,
+        bankName: body.bankName,
+        branchName: body.branchName,
+        accountType: parseLooseEnum(body.accountType, ['SAVINGS', 'CURRENT']),
+        upiId: body.upiId,
+      },
+      front: proof,
+    });
+  }
+
   if (!proof && !existing) throw ApiError.badRequest('Upload a cancelled cheque or the first page of your passbook as "proof"');
 
   return storeDocument(application, 'BANK_ACCOUNT', {
@@ -511,7 +579,11 @@ const saveBankDetails = async (userId, body, files = {}) => {
 const saveProfilePhoto = async (userId, files = {}) => {
   const application = await getEditableDraft(userId);
   const photo = files.photo?.[0];
-  if (!photo) throw ApiError.badRequest('Upload a clear photo of your face as "photo"');
+  if (!photo) {
+    // Validation off: nothing to save, and nothing to complain about.
+    if (relaxed) return buildView(application);
+    throw ApiError.badRequest('Upload a clear photo of your face as "photo"');
+  }
 
   const key = `profiles/${application.id}/photo-${crypto.randomUUID()}.${extensionFor(photo.mimetype)}`;
   await storage.put(key, photo.buffer, photo.mimetype);
@@ -626,10 +698,13 @@ const submit = async (userId) => {
   if (!application) throw ApiError.badRequest('Start your application before submitting it');
   assertEditable(application);
 
-  const missing = computeSteps(application).filter((step) => !step.complete).map((step) => step.key);
-  if (missing.length) throw ApiError.badRequest('Complete every step before submitting', { missing });
-  if (application.homeZone && application.homeZone.cityId !== application.user.cityId) {
-    throw ApiError.badRequest('Home zone must be in your city', { missing: ['services'] });
+  // With validation off an application can be submitted at any point.
+  if (!relaxed) {
+    const missing = computeSteps(application).filter((step) => !step.complete).map((step) => step.key);
+    if (missing.length) throw ApiError.badRequest('Complete every step before submitting', { missing });
+    if (application.homeZone && application.homeZone.cityId !== application.user.cityId) {
+      throw ApiError.badRequest('Home zone must be in your city', { missing: ['services'] });
+    }
   }
 
   const fromStatus = application.onboardingStatus;

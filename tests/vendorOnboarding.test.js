@@ -1,3 +1,7 @@
+// These tests pin down the full onboarding rules, so they run with validation on
+// (the server default is off while the apps are being built — see onboardingRelaxed.test.js).
+process.env.ONBOARDING_VALIDATION = 'strict';
+
 const fs = require('fs');
 const os = require('os');
 const path = require('path');

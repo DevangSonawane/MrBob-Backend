@@ -14,8 +14,9 @@ module.exports = {
     {
       name: TAG,
       description:
-        'Sign-in for the customer app (phone + OTP) and the admin dashboard (email + password). Vendors sign in through ' +
-        '**Vendor onboarding · Step 1 & 2** instead. Every sign-in returns an access token (15 min) and a refresh token (30 days).',
+        'Email + password sign-in for the admin dashboard, token refresh, and a generic phone + OTP sign-in. The apps sign in through ' +
+        'their own onboarding sections instead (**Customer onboarding** and **Vendor onboarding**, steps 1 and 2). Every sign-in ' +
+        'returns an access token (15 min) and a refresh token (30 days).',
     },
   ],
   paths: {

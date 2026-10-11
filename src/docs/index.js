@@ -6,12 +6,13 @@ const { schemas, responses } = require('./components');
 // sections appear in Swagger UI. tests/apiDocs.test.js fails if a route is
 // added without being documented here (or the other way round).
 const sections = [
+  require('./paths/customer'), // customer onboarding steps + "My account"
+  require('./paths/bookings'), // service catalogue, booking flow, admin bookings, dispatch
   require('./paths/vendorOnboarding'),
   require('./paths/users'), // also defines the "Super admin panel" section
   require('./paths/auth'),
   require('./paths/onboarding'),
   require('./paths/professionals'),
-  require('./paths/bookings'),
   require('./paths/commerce'),
   require('./paths/platform'),
 ];
@@ -30,10 +31,22 @@ module.exports = {
       '- Protected endpoints need `Authorization: Bearer <accessToken>`. Click **Authorize** and paste an access token to try them here.',
       '- Each endpoint states who may call it under **Access**. A super admin may call anything an admin may.',
       '',
-      '**Vendor onboarding in five steps** — the first five sections below, in the order the vendor app uses them: ',
-      'phone number → verify OTP → enter details → verify vendor → vendor verified.',
+      '**Customer onboarding in four steps** — phone number → verify OTP → name & gender → address. **My account** covers editing the profile, addresses and deleting the account.',
       '',
-      '**Super admin panel** — the section after those gathers what the super admin dashboard uses: vendors by status, the final decision, and all users.',
+      ...(env.ONBOARDING_VALIDATION === 'strict'
+        ? []
+        : [
+            '> **Onboarding validation is switched off on this server.** The customer and vendor onboarding endpoints accept any input: ' +
+              'every field is optional and the formats and rules described below (phone, pincode, age, Aadhaar, PAN, IFSC, required images, ' +
+              'file types, complete-before-submit) are not enforced; a value that cannot be stored is left out rather than refused. ' +
+              'The only input check is the OTP, which must be 4 digits and correct. The rules below describe what will apply once it is switched back on.',
+            '',
+          ]),
+      '**Booking flow** — service → date & time → problem description → payment, sent as one request. **Bookings (admin)** is how the team watches and manages them.',
+      '',
+      '**Vendor onboarding in five steps** — phone number → verify OTP → enter details → verify vendor → vendor verified.',
+      '',
+      '**Super admin panel** — gathers what the super admin dashboard uses: vendors by status, the final decision, and all users (list, view, edit, delete).',
     ].join('\n'),
   },
   // Relative, so "Try it out" always calls the server the docs were loaded

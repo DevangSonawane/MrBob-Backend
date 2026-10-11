@@ -26,4 +26,15 @@ const verifyWebhookSignature = (rawBody, signature) => {
   return expected === signature;
 };
 
-module.exports = { client, isConfigured, createOrder, verifyWebhookSignature };
+// Checkout hands the app (order id, payment id, signature); the signature is
+// HMAC-SHA256 of "<order id>|<payment id>" with the key secret, which proves
+// the payment really happened for this order.
+const verifyPaymentSignature = ({ orderId, paymentId, signature }) => {
+  if (!env.RAZORPAY_KEY_SECRET || !signature) return false;
+  const expected = crypto.createHmac('sha256', env.RAZORPAY_KEY_SECRET).update(`${orderId}|${paymentId}`).digest('hex');
+  const given = Buffer.from(String(signature));
+  const wanted = Buffer.from(expected);
+  return given.length === wanted.length && crypto.timingSafeEqual(given, wanted);
+};
+
+module.exports = { client, isConfigured, createOrder, verifyWebhookSignature, verifyPaymentSignature };

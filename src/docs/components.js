@@ -12,7 +12,8 @@ const object = (properties, required) => ({ type: 'object', ...(required && { re
 
 const ROLES = ['CUSTOMER', 'PROFESSIONAL', 'ADMIN', 'SUPER_ADMIN'];
 const KYC_STATUSES = ['PENDING', 'IN_REVIEW', 'VERIFIED', 'REJECTED'];
-const BOOKING_STATUSES = ['PENDING', 'MATCHING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
+const BOOKING_STATUSES = ['AWAITING_PAYMENT', 'PENDING', 'MATCHING', 'ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
+const BOOKING_ID = '6e5d4c3b-aaaa-4b1c-8d2e-3f4a5b6c7d8e';
 const ONBOARDING_STATUSES = ['DRAFT', 'SUBMITTED', 'PENDING_APPROVAL', 'CHANGES_REQUESTED', 'APPROVED', 'REJECTED'];
 const DOCUMENT_STATUSES = ['NOT_UPLOADED', 'PENDING', 'VERIFIED', 'REJECTED'];
 
@@ -148,8 +149,155 @@ const event = (action, fromStatus, toStatus, actorName, actorRole, extra = {}) =
   ...extra,
 });
 
+// Customer onboarding examples ---------------------------------------------
+
+const customerUser = (overrides = {}) => ({
+  id: 'd4c3b2a1-9999-4f8e-8d7c-6b5a4f3e2d1c',
+  name: 'New User',
+  phone: '+919812345678',
+  email: null,
+  role: 'CUSTOMER',
+  cityId: null,
+  address: null,
+  gender: null,
+  dateOfBirth: null,
+  isOnboarded: false,
+  isActive: true,
+  lastLoginAt: '2026-10-06T09:30:00.000Z',
+  deletedAt: null,
+  createdAt: '2026-10-06T09:30:00.000Z',
+  updatedAt: '2026-10-06T09:30:00.000Z',
+  city: null,
+  profilePhoto: null,
+  ...overrides,
+});
+
+const addressExample = {
+  id: '2f6a1b7c-8888-4d2e-9f3a-5b6c7d8e9f0a',
+  label: 'HOME',
+  contactName: null,
+  contactPhone: null,
+  line1: '12, 4th Cross, 5th Block',
+  line2: 'Koramangala',
+  landmark: 'Near Forum Mall',
+  state: 'Karnataka',
+  pincode: '560034',
+  latitude: 12.9352,
+  longitude: 77.6245,
+  isDefault: true,
+  createdAt: '2026-10-06T09:35:00.000Z',
+  updatedAt: '2026-10-06T09:35:00.000Z',
+  city: { id: '0d9b7a3c-1111-4a2b-9c3d-4e5f6a7b8c9d', name: 'Bengaluru' },
+  zone: { id: '7a6b5c4d-3333-4e2f-9a1b-0c9d8e7f6a5b', name: 'Koramangala' },
+};
+
+const customerFlow = (profileDone, addressDone) => ({
+  currentStep: profileDone && addressDone ? null : profileDone ? 4 : 3,
+  isComplete: profileDone && addressDone,
+  steps: [
+    { step: 1, key: 'PHONE_NUMBER', title: 'Phone number', status: 'COMPLETE' },
+    { step: 2, key: 'VERIFY_OTP', title: 'Verify OTP', status: 'COMPLETE' },
+    { step: 3, key: 'PROFILE', title: 'Name and gender', status: profileDone ? 'COMPLETE' : 'CURRENT' },
+    { step: 4, key: 'ADDRESS', title: 'Address', status: addressDone ? 'COMPLETE' : profileDone ? 'CURRENT' : 'PENDING' },
+  ],
+});
+
+const named = { name: 'Aarav Mehta', gender: 'MALE', email: 'aarav@example.com', dateOfBirth: '1994-03-21' };
+const settled = { ...named, isOnboarded: true, cityId: addressExample.city.id, city: addressExample.city, address: '12, 4th Cross, 5th Block, Koramangala, Near Forum Mall, Bengaluru, Karnataka 560034' };
+
+// stage: 'new' (just verified), 'profile' (step 3 done), 'done' (step 4 done)
+const customerOnboarding = (stage) => ({
+  user: customerUser(stage === 'new' ? {} : stage === 'profile' ? named : settled),
+  flow: customerFlow(stage !== 'new', stage === 'done'),
+  nextStep: stage === 'new' ? 'profile' : stage === 'profile' ? 'address' : null,
+  defaultAddress: stage === 'done' ? addressExample : null,
+});
+
+// Booking examples ----------------------------------------------------------
+
+const bookingEvent = (type, actorRole, fromStatus, toStatus, note = null) => ({
+  id: '9a8b7c6d-bbbb-4e5f-9a0b-1c2d3e4f5a6b',
+  type,
+  actorRole,
+  fromStatus,
+  toStatus,
+  note,
+  createdAt: '2026-10-07T06:00:00.000Z',
+  actor: actorRole === 'SYSTEM' ? null : { id: 'd4c3b2a1-9999-4f8e-8d7c-6b5a4f3e2d1c', name: actorRole === 'CUSTOMER' ? 'Aarav Mehta' : 'Ops Reviewer' },
+});
+
+// stage: 'awaitingPayment' | 'pending' | 'payLater' | 'assigned' | 'cancelled'; viewer: 'customer' | 'admin'
+const bookingExample = (stage, viewer = 'customer') => {
+  const online = stage !== 'payLater';
+  const status = { awaitingPayment: 'AWAITING_PAYMENT', pending: 'PENDING', payLater: 'PENDING', assigned: 'ASSIGNED', cancelled: 'CANCELLED' }[stage];
+  const paid = online && stage !== 'awaitingPayment';
+  const customer = viewer === 'customer';
+  const open = !['CANCELLED'].includes(status);
+  const timeline = [bookingEvent('CREATED', 'CUSTOMER', null, online ? 'AWAITING_PAYMENT' : 'PENDING')];
+  if (paid) timeline.push(bookingEvent('PAYMENT_RECEIVED', 'CUSTOMER', 'AWAITING_PAYMENT', 'PENDING'));
+  if (stage === 'assigned') timeline.push(bookingEvent('STATUS_CHANGED', 'ADMIN', 'PENDING', 'MATCHING'), bookingEvent('ASSIGNED', 'ADMIN', 'MATCHING', 'ASSIGNED'));
+  if (stage === 'cancelled') timeline.push(bookingEvent('CANCELLED', 'CUSTOMER', 'PENDING', 'CANCELLED', 'Plans changed, will rebook next week'));
+
+  return {
+    id: BOOKING_ID,
+    bookingNumber: 'BK-000123',
+    status,
+    service: { id: '3f2e1d0c-2222-4b3a-8c7d-6e5f4a3b2c1d', name: 'Electrician', tier: 'REPAIR' },
+    scheduledAt: '2026-10-09T04:30:00.000Z',
+    description: 'The kitchen switchboard sparks when the mixer is plugged in.',
+    price: 299,
+    address: {
+      line: '12, 4th Cross, 5th Block, Koramangala, Near Forum Mall, Bengaluru, Karnataka 560034',
+      city: addressExample.city,
+      zone: addressExample.zone,
+      pincode: '560034',
+      latitude: 12.9352,
+      longitude: 77.6245,
+      contactName: null,
+      contactPhone: null,
+    },
+    payment: {
+      mode: online ? 'ONLINE' : 'PAY_AFTER_SERVICE',
+      status: !online ? 'UNPAID' : stage === 'awaitingPayment' ? 'CREATED' : stage === 'cancelled' ? 'REFUND_PENDING' : 'SUCCESS',
+      amount: 299,
+      method: paid ? 'ONLINE' : null,
+      paidAt: paid ? '2026-10-07T06:01:00.000Z' : null,
+      refundedAt: null,
+    },
+    checkout:
+      customer && stage === 'awaitingPayment'
+        ? { provider: 'razorpay', orderId: 'order_Pq1x2y3z4A5b6C', amount: 29900, currency: 'INR', keyId: 'rzp_test_AbCdEfGhIjKlMn', isTest: false }
+        : null,
+    professional: stage === 'assigned' ? { id: APPLICATION_ID, name: 'Ravi Kumar', phone: '+919812345678', rating: 4.8, photo: `/professionals/${APPLICATION_ID}/photo` } : null,
+    ...(!customer && { customer: { id: 'd4c3b2a1-9999-4f8e-8d7c-6b5a4f3e2d1c', name: 'Aarav Mehta', phone: '+919898989898', email: 'aarav@example.com' } }),
+    cancellation: stage === 'cancelled' ? { at: '2026-10-07T07:00:00.000Z', by: 'CUSTOMER', reason: 'Plans changed, will rebook next week' } : null,
+    actions: {
+      canPay: customer && stage === 'awaitingPayment',
+      canCancel: open,
+      canReschedule: open,
+      canCollectPayment: false,
+    },
+    assignedAt: stage === 'assigned' ? '2026-10-07T06:20:00.000Z' : null,
+    startedAt: null,
+    completedAt: null,
+    createdAt: '2026-10-07T06:00:00.000Z',
+    updatedAt: '2026-10-07T06:01:00.000Z',
+    timeline,
+  };
+};
+
 const examples = {
   APPLICATION_ID,
+  BOOKING_ID,
+  booking: bookingExample,
+  customerUser,
+  address: addressExample,
+  customerOnboarding,
+  me: () => ({
+    ...customerUser(settled),
+    professional: null,
+    addresses: [addressExample],
+  }),
   flow: flowExample,
   newApplication: newApplicationExample,
   application: filledApplication,
@@ -311,17 +459,76 @@ const schemas = {
   AuthSession: object({ user: ref('PublicUser'), accessToken: str(examples.tokens.accessToken), refreshToken: str(examples.tokens.refreshToken) }),
   User: object({
     id: id(),
-    name: str('Ravi Kumar'),
+    name: str('Aarav Mehta'),
     phone: nullable(str('+919812345678')),
-    email: nullable(str('ravi.kumar@example.com')),
+    email: nullable(str('aarav@example.com')),
     role: oneOf(ROLES, 'CUSTOMER'),
-    cityId: nullable(id()),
-    address: nullable(str('12, 4th Cross, Koramangala')),
+    gender: nullable(oneOf(['MALE', 'FEMALE', 'OTHER'], 'MALE')),
+    dateOfBirth: nullable(str('1994-03-21', { format: 'date' })),
+    profilePhoto: nullable(str('/users/5b0f6c1e-7d6a-4c58-9d3e-2a1f0b9c8d7e/photo', { description: 'Authenticated API path of the photo' })),
+    cityId: nullable({ ...id(), description: 'City of the default address' }),
+    address: nullable(str('12, 4th Cross, Koramangala, Bengaluru, Karnataka 560034', { description: 'The default address on one line' })),
     isOnboarded: { type: 'boolean' },
     isActive: { type: 'boolean', example: true },
+    lastLoginAt: nullable(dateTime()),
+    deletedAt: nullable({ ...dateTime(), description: 'Set when the account has been deleted; null otherwise' }),
     createdAt: dateTime(),
     updatedAt: dateTime(),
   }),
+  Address: object({
+    id: id('2f6a1b7c-8888-4d2e-9f3a-5b6c7d8e9f0a'),
+    label: oneOf(['HOME', 'WORK', 'OTHER'], 'HOME'),
+    contactName: nullable(str(undefined, { description: 'Who to ask for at this address, if not the account holder' })),
+    contactPhone: nullable(str()),
+    line1: str('12, 4th Cross, 5th Block'),
+    line2: nullable(str('Koramangala')),
+    landmark: nullable(str('Near Forum Mall')),
+    city: object({ id: id(), name: str('Bengaluru') }),
+    zone: nullable(object({ id: id(), name: str('Koramangala') })),
+    state: str('Karnataka'),
+    pincode: str('560034'),
+    latitude: nullable({ type: 'number', example: 12.9352 }),
+    longitude: nullable({ type: 'number', example: 77.6245 }),
+    isDefault: { type: 'boolean', example: true },
+    createdAt: dateTime(),
+    updatedAt: dateTime(),
+  }),
+  UserProfile: {
+    allOf: [ref('UserListItem'), object({ addresses: { ...arrayOf(ref('Address')), description: 'Default address first' } })],
+    description: 'The signed-in user\'s own account.',
+  },
+  CustomerFlow: {
+    ...object({
+      currentStep: nullable({ type: 'integer', example: 3, description: 'The step the customer is on (3 or 4); null once onboarding is complete' }),
+      isComplete: { type: 'boolean', example: false },
+      steps: arrayOf(
+        object({
+          step: { type: 'integer', example: 3 },
+          key: oneOf(['PHONE_NUMBER', 'VERIFY_OTP', 'PROFILE', 'ADDRESS']),
+          title: str('Name and gender'),
+          status: oneOf(['PENDING', 'CURRENT', 'COMPLETE']),
+        }),
+      ),
+    }),
+    description: 'The four-step customer onboarding journey, ready to render as a progress tracker.',
+  },
+  CustomerOnboarding: object({
+    user: ref('UserWithCity'),
+    flow: ref('CustomerFlow'),
+    nextStep: nullable({ ...oneOf(['profile', 'address']), description: 'The screen to show next; null when onboarding is finished' }),
+    defaultAddress: nullable({ allOf: [ref('Address')] }),
+  }),
+  CustomerSession: {
+    allOf: [
+      object({
+        isNewUser: { type: 'boolean', description: 'True when this phone number had no account before' },
+        accessToken: str(examples.tokens.accessToken),
+        refreshToken: str(examples.tokens.refreshToken),
+      }),
+      ref('CustomerOnboarding'),
+    ],
+  },
+  UserWithCity: { allOf: [ref('User'), object({ city: nullable(object({ id: id(), name: str('Bengaluru') })) })] },
   City: object({ id: id(), name: str('Bengaluru'), tier: oneOf(['TIER_1', 'TIER_2'], 'TIER_1'), isActive: { type: 'boolean', example: true }, createdAt: dateTime() }),
   Zone: object({ id: id(), cityId: id(), name: str('Koramangala'), isActive: { type: 'boolean', example: true }, createdAt: dateTime() }),
   ServiceCategory: object({
@@ -348,18 +555,98 @@ const schemas = {
     }),
     description: 'What other users see of a professional.',
   },
-  Booking: object({
-    id: id(),
-    customerId: id(),
-    professionalId: nullable(id()),
-    categoryId: id(),
-    status: oneOf(BOOKING_STATUSES, 'PENDING'),
-    scheduledAt: nullable(dateTime('2026-10-08T04:30:00.000Z')),
-    address: str('12, 4th Cross, Koramangala, Bengaluru'),
-    price: nullable(money('299')),
-    partnerId: nullable(id()),
-    createdAt: dateTime(),
-    updatedAt: dateTime(),
+  Booking: {
+    ...object({
+      id: id(BOOKING_ID),
+      bookingNumber: str('BK-000123', { description: 'Reference to show the customer and quote to support' }),
+      status: {
+        ...oneOf(BOOKING_STATUSES, 'PENDING'),
+        description:
+          '`AWAITING_PAYMENT` online payment not completed yet · `PENDING` confirmed, finding a professional · `MATCHING` candidates being ' +
+          'considered · `ASSIGNED` a professional is booked · `IN_PROGRESS` work has started · `COMPLETED` · `CANCELLED`',
+      },
+      service: object({ id: id(), name: str('Electrician'), tier: oneOf(['REPAIR', 'RENOVATION', 'RECURRING'], 'REPAIR') }),
+      scheduledAt: dateTime('2026-10-09T04:30:00.000Z'),
+      description: nullable(str('The kitchen switchboard sparks when the mixer is plugged in.')),
+      price: nullable({ type: 'number', example: 299, description: 'Amount payable, in rupees' }),
+      address: object({
+        line: str('12, 4th Cross, 5th Block, Koramangala, Bengaluru, Karnataka 560034'),
+        city: nullable(object({ id: id(), name: str('Bengaluru') })),
+        zone: nullable(object({ id: id(), name: str('Koramangala') })),
+        pincode: nullable(str('560034')),
+        latitude: nullable({ type: 'number', example: 12.9352 }),
+        longitude: nullable({ type: 'number', example: 77.6245 }),
+        contactName: nullable(str()),
+        contactPhone: nullable(str()),
+      }),
+      payment: object({
+        mode: oneOf(['ONLINE', 'PAY_AFTER_SERVICE'], 'ONLINE'),
+        status: { ...oneOf(['UNPAID', 'CREATED', 'PENDING', 'SUCCESS', 'FAILED', 'REFUND_PENDING', 'REFUNDED'], 'SUCCESS'), description: '`UNPAID` = nothing taken yet (pay after service)' },
+        amount: nullable({ type: 'number', example: 299 }),
+        method: nullable(str('ONLINE', { description: '`ONLINE`, or `CASH` / `UPI` / `CARD` when collected in person' })),
+        paidAt: nullable(dateTime()),
+        refundedAt: nullable(dateTime()),
+      }),
+      checkout: nullable(ref('BookingCheckout')),
+      professional: nullable(
+        object({ id: id(), name: str('Ravi Kumar'), phone: nullable(str('+919812345678')), rating: { type: 'number', example: 4.8 }, photo: nullable(str('/professionals/…/photo')) }),
+      ),
+      customer: { ...object({ id: id(), name: str('Aarav Mehta'), phone: nullable(str('+919812345678')), email: nullable(str()) }), description: 'Only in responses to professionals and admins' },
+      cancellation: nullable(object({ at: dateTime(), by: oneOf(['CUSTOMER', 'PROFESSIONAL', 'ADMIN', 'SYSTEM']), reason: nullable(str('Plans changed')) })),
+      actions: {
+        ...object({ canPay: { type: 'boolean' }, canCancel: { type: 'boolean' }, canReschedule: { type: 'boolean' }, canCollectPayment: { type: 'boolean' } }),
+        description: 'What the caller may do with this booking right now — drive button visibility from this',
+      },
+      assignedAt: nullable(dateTime()),
+      startedAt: nullable(dateTime()),
+      completedAt: nullable(dateTime()),
+      createdAt: dateTime(),
+      updatedAt: dateTime(),
+    }),
+    description: 'A booking as returned by every booking endpoint.',
+  },
+  BookingCheckout: {
+    ...object({
+      provider: str('razorpay'),
+      orderId: str('order_Pq1x2y3z4A5b6C', { description: 'Pass to Razorpay Checkout as `order_id`' }),
+      amount: { type: 'integer', example: 29900, description: 'In paise' },
+      currency: str('INR'),
+      keyId: nullable(str('rzp_test_…', { description: 'Razorpay key id for Checkout' })),
+      isTest: { type: 'boolean', description: 'True when the server has no gateway keys: a stand-in order that needs no real payment (development only)' },
+    }),
+    description: 'Present on the customer\'s own booking while it is `AWAITING_PAYMENT`.',
+  },
+  BookingDetail: {
+    allOf: [
+      ref('Booking'),
+      object({
+        timeline: {
+          ...arrayOf(
+            object({
+              id: id(),
+              type: oneOf(['CREATED', 'PAYMENT_RECEIVED', 'STATUS_CHANGED', 'ASSIGNED', 'RESCHEDULED', 'CANCELLED', 'PAYMENT_COLLECTED', 'REFUNDED']),
+              actorRole: oneOf(['CUSTOMER', 'PROFESSIONAL', 'ADMIN', 'SYSTEM']),
+              fromStatus: nullable(oneOf(BOOKING_STATUSES)),
+              toStatus: nullable(oneOf(BOOKING_STATUSES)),
+              note: nullable(str()),
+              createdAt: dateTime(),
+              actor: nullable(object({ id: id(), name: str('Aarav Mehta') })),
+            }),
+          ),
+          description: 'Everything that has happened to the booking, oldest first',
+        },
+      }),
+    ],
+  },
+  BookingSummary: object({
+    total: { type: 'integer', example: 964 },
+    byStatus: { type: 'object', additionalProperties: { type: 'integer' }, example: { AWAITING_PAYMENT: 6, PENDING: 84, MATCHING: 31, ASSIGNED: 76, IN_PROGRESS: 42, COMPLETED: 681, CANCELLED: 44 } },
+    scheduledToday: { type: 'integer', example: 37, description: 'Not-cancelled bookings scheduled for today (server time)' },
+    waitingForProfessional: { type: 'integer', example: 115, description: '`PENDING` + `MATCHING`' },
+    awaitingPayment: { type: 'integer', example: 6 },
+    refundsPending: { type: 'integer', example: 3 },
+    completedUnpaid: { type: 'integer', example: 4, description: 'Completed pay-after-service jobs with no payment recorded' },
+    amountCollected: { type: 'number', example: 248730, description: 'Total of successful booking payments, in rupees' },
   }),
   Payment: object({
     id: id(),
@@ -368,7 +655,11 @@ const schemas = {
     amount: money('299'),
     method: nullable(str('upi')),
     gatewayRef: nullable(str('order_Pq1x2y3z4A5b6C', { description: 'Razorpay order id' })),
-    status: oneOf(['CREATED', 'PENDING', 'SUCCESS', 'FAILED', 'REFUNDED'], 'CREATED'),
+    gatewayPaymentId: nullable(str('pay_Pq9z8y7x6W5v4U')),
+    status: oneOf(['CREATED', 'PENDING', 'SUCCESS', 'FAILED', 'REFUND_PENDING', 'REFUNDED'], 'SUCCESS'),
+    paidAt: nullable(dateTime()),
+    refundedAt: nullable(dateTime()),
+    refundReference: nullable(str()),
     createdAt: dateTime(),
     updatedAt: dateTime(),
   }),
@@ -532,6 +823,7 @@ const schemas = {
     allOf: [
       ref('UserListItem'),
       object({
+        addresses: arrayOf(ref('Address')),
         counts: object({
           bookings: { type: 'integer', example: 24, description: 'Bookings made as a customer' },
           reviews: { type: 'integer', example: 9 },
@@ -547,6 +839,7 @@ const schemas = {
     inactive: { type: 'integer', example: 26 },
     onboarded: { type: 'integer', example: 1321 },
     newInLast30Days: { type: 'integer', example: 96 },
+    deleted: { type: 'integer', example: 7, description: 'Deleted accounts; not included in any of the other numbers' },
   }),
 };
 

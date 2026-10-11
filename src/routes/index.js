@@ -2,6 +2,7 @@ const { Router } = require('express');
 
 const authRoutes = require('../modules/auth/auth.routes');
 const onboardingRoutes = require('../modules/onboarding/onboarding.routes');
+const customerOnboardingRoutes = require('../modules/customerOnboarding/customerOnboarding.routes');
 const vendorOnboardingRoutes = require('../modules/vendorOnboarding/vendorOnboarding.routes');
 const usersRoutes = require('../modules/users/users.routes');
 const professionalsRoutes = require('../modules/professionals/professionals.routes');
@@ -20,6 +21,7 @@ const dashboardRoutes = require('../modules/dashboard/dashboard.routes');
 const mounts = [
   ['/auth', authRoutes],
   ['/onboarding', onboardingRoutes],
+  ['/customer-onboarding', customerOnboardingRoutes],
   ['/vendor-onboarding', vendorOnboardingRoutes],
   ['/users', usersRoutes],
   ['/professionals', professionalsRoutes],

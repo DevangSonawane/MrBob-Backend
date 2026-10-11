@@ -1,5 +1,4 @@
 const catchAsync = require('../../utils/catchAsync');
-const sanitizeUser = require('../../utils/sanitizeUser');
 const service = require('./onboarding.service');
 
 const getStatus = catchAsync(async (req, res) => {
@@ -7,9 +6,4 @@ const getStatus = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: status });
 });
 
-const completeCustomer = catchAsync(async (req, res) => {
-  const user = await service.completeCustomerOnboarding(req.user.id, req.body);
-  res.status(200).json({ success: true, data: sanitizeUser(user) });
-});
-
-module.exports = { getStatus, completeCustomer };
+module.exports = { getStatus };
