@@ -12,6 +12,25 @@ async function main() {
     zone = await prisma.zone.create({ data: { cityId: city.id, name: 'Koramangala' } });
   }
 
+  // Mumbai and its localities, south to north, then the eastern and harbour suburbs.
+  const mumbaiZones = [
+    'Colaba', 'Fort', 'Churchgate', 'Marine Lines', 'Girgaon', 'Malabar Hill', 'Tardeo', 'Mumbai Central', 'Byculla', 'Parel', 'Lower Parel',
+    'Worli', 'Prabhadevi', 'Dadar', 'Matunga', 'Mahim', 'Sion', 'Wadala',
+    'Bandra West', 'Bandra East', 'Khar', 'Santacruz', 'Juhu', 'Vile Parle', 'Andheri West', 'Andheri East', 'Versova', 'Jogeshwari',
+    'Goregaon', 'Malad', 'Kandivali', 'Borivali', 'Dahisar',
+    'Kurla', 'Ghatkopar', 'Vikhroli', 'Powai', 'Kanjurmarg', 'Bhandup', 'Mulund',
+    'Chembur', 'Govandi', 'Mankhurd',
+  ];
+  let mumbai = await prisma.city.findFirst({ where: { name: { equals: 'Mumbai', mode: 'insensitive' } } });
+  if (!mumbai) {
+    mumbai = await prisma.city.create({ data: { name: 'Mumbai', tier: 'TIER_1' } });
+  }
+  const existingZones = new Set((await prisma.zone.findMany({ where: { cityId: mumbai.id }, select: { name: true } })).map((row) => row.name.toLowerCase()));
+  const missingZones = mumbaiZones.filter((name) => !existingZones.has(name.toLowerCase()));
+  if (missingZones.length) {
+    await prisma.zone.createMany({ data: missingZones.map((name) => ({ cityId: mumbai.id, name })) });
+  }
+
   const categories = [
     { name: 'Electrician', tier: 'REPAIR', basePrice: 299 },
     { name: 'Plumber', tier: 'REPAIR', basePrice: 349 },
@@ -51,8 +70,8 @@ async function main() {
   }
 
   console.log('Seeded:', {
-    city: city.name,
-    zone: zone.name,
+    cities: [city.name, mumbai.name],
+    zones: `${zone.name} + ${mumbaiZones.length} in Mumbai (${missingZones.length} added now)`,
     categories: categories.length,
     admin: admin.phone,
     dashboardLogin: email && password ? email : 'not set (run with SEED_SUPER_ADMIN_EMAIL and SEED_SUPER_ADMIN_PASSWORD)',

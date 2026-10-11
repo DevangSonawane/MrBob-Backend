@@ -16,12 +16,14 @@ module.exports = {
       post: op({
         tag: ZONES,
         summary: 'Create a city',
+        description: 'Returns **409** if a city with the same name (ignoring case) already exists.',
         access: 'ADMIN',
         body: jsonBody(
           { type: 'object', required: ['name', 'tier'], properties: { name: { type: 'string', minLength: 2 }, tier: { type: 'string', enum: ['TIER_1', 'TIER_2'] } } },
           { name: 'Pune', tier: 'TIER_1' },
         ),
         responses: { 201: ok('City created', ref('City')) },
+        errors: [409],
       }),
     },
     '/zones': {
@@ -35,12 +37,14 @@ module.exports = {
       post: op({
         tag: ZONES,
         summary: 'Create a zone',
+        description: 'Returns **404** for an unknown city and **409** if that city already has a zone with the same name (ignoring case).',
         access: 'ADMIN',
         body: jsonBody(
           { type: 'object', required: ['cityId', 'name'], properties: { cityId: { type: 'string', format: 'uuid' }, name: { type: 'string', minLength: 2 } } },
           { cityId: '0d9b7a3c-1111-4a2b-9c3d-4e5f6a7b8c9d', name: 'Indiranagar' },
         ),
         responses: { 201: ok('Zone created', ref('Zone')) },
+        errors: [404, 409],
       }),
     },
     '/partners': {
