@@ -56,4 +56,27 @@ const uploadFiles = (fieldNames, { imagesOnly = false } = {}) => {
   };
 };
 
-module.exports = { uploadFiles, extensionFor };
+// Usage: uploadImages('images', 5) — up to `max` JPEG / PNG / WebP files in
+// one field, kept in memory as req.files (an array). Always checked: these
+// are shown to other people, so only genuine images are accepted.
+const uploadImages = (fieldName, max) => {
+  const parser = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_BYTES, files: max } }).array(fieldName, max);
+  return (req, res, next) => {
+    parser(req, res, (err) => {
+      if (err instanceof multer.MulterError) {
+        const message =
+          err.code === 'LIMIT_FILE_SIZE' ? 'Each image must be 5 MB or smaller' : ['LIMIT_FILE_COUNT', 'LIMIT_UNEXPECTED_FILE'].includes(err.code) ? `Send up to ${max} images in "${fieldName}"` : `Upload rejected: ${err.message}`;
+        return next(ApiError.badRequest(message));
+      }
+      if (err) return next(err);
+      for (const file of req.files ?? []) {
+        const type = FILE_TYPES[file.mimetype];
+        if (!type || file.mimetype === 'application/pdf' || !type.matches(file.buffer)) return next(ApiError.badRequest('Each file must be a JPEG, PNG or WebP image'));
+      }
+      req.body ??= {};
+      next();
+    });
+  };
+};
+
+module.exports = { uploadFiles, uploadImages, extensionFor };

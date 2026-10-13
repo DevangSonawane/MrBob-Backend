@@ -4,6 +4,7 @@
 // "the most CPU- and latency-sensitive path" and the first extraction
 // candidate). Do not reach into other modules' tables from outside here —
 // only via Prisma models that mirror what would be cross-service calls.
+const { jobOtp } = require('../bookings/bookings.service');
 
 const prisma = require('../../config/prisma');
 const ApiError = require('../../utils/ApiError');
@@ -63,7 +64,7 @@ const assign = async (bookingId, professionalId, actor) => {
   return prisma.$transaction(async (tx) => {
     const updated = await tx.booking.update({
       where: { id: bookingId },
-      data: { professionalId, status: 'ASSIGNED', assignedAt: new Date() },
+      data: { professionalId, status: 'ASSIGNED', assignedAt: new Date(), startOtp: jobOtp(), startOtpAttempts: 0 },
     });
     await tx.bookingEvent.create({
       data: { bookingId, type: 'ASSIGNED', actorId: actor?.id ?? null, actorRole: actor ? 'ADMIN' : 'SYSTEM', fromStatus: booking.status, toStatus: 'ASSIGNED' },

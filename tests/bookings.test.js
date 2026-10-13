@@ -178,17 +178,18 @@ describe('Pay after service: confirmed straight away, through to completion', ()
     expect((await get(otherPro, id)).status).toBe(403);
   });
 
-  it('is started and completed by the assigned professional only', async () => {
+  it('can be moved along by the team, but not by a vendor or customer without the OTP flow', async () => {
+    expect((await setStatus(pro, id, 'IN_PROGRESS')).status).toBe(403);
     expect((await setStatus(otherPro, id, 'IN_PROGRESS')).status).toBe(403);
     expect((await setStatus(customer, id, 'IN_PROGRESS')).status).toBe(403);
-    expect((await setStatus(pro, id, 'COMPLETED')).status).toBe(400); // can't skip "in progress"
+    expect((await setStatus(admin, id, 'COMPLETED')).status).toBe(400); // can't skip "in progress"
     expect((await post(pro, id, 'payment/collect', { method: 'CASH' })).status).toBe(409); // not started yet
 
-    const started = await setStatus(pro, id, 'IN_PROGRESS');
+    const started = await setStatus(admin, id, 'IN_PROGRESS');
     expect(started.status).toBe(200);
     expect(started.body.data.status).toBe('IN_PROGRESS');
     expect(started.body.data.startedAt).not.toBeNull();
-    expect(started.body.data.actions).toMatchObject({ canCollectPayment: true, canCancel: false });
+    expect(started.body.data.actions).toMatchObject({ canCollectPayment: true });
 
     // Once work has started the customer can no longer cancel or reschedule.
     expect((await post(customer, id, 'cancel', { reason: 'Changed my mind' })).status).toBe(409);
@@ -206,7 +207,7 @@ describe('Pay after service: confirmed straight away, through to completion', ()
     expect(collected.body.data.payment.paidAt).not.toBeNull();
     expect((await post(pro, id, 'payment/collect', { method: 'UPI' })).status).toBe(409);
 
-    const done = await setStatus(pro, id, 'COMPLETED');
+    const done = await setStatus(admin, id, 'COMPLETED');
     expect(done.body.data.status).toBe('COMPLETED');
     expect(done.body.data.completedAt).not.toBeNull();
     expect(timelineTypes(done)).toEqual(['CREATED', 'STATUS_CHANGED', 'ASSIGNED', 'STATUS_CHANGED', 'PAYMENT_COLLECTED', 'STATUS_CHANGED']);
@@ -438,7 +439,7 @@ describe('Listing bookings', () => {
     const res = await book(otherCustomer, { scheduledAt: inHours(40) });
     const id = res.body.data.id;
     await request(app).post(`${API}/dispatch/bookings/${id}/assign`).set(admin.auth).send({ professionalId: otherPro.professionalId });
-    await setStatus(otherPro, id, 'IN_PROGRESS');
+    await setStatus(admin, id, 'IN_PROGRESS');
     expect((await post(otherCustomer, id, 'cancel', { reason: 'Too slow, cancel it' })).status).toBe(409);
 
     const cancelled = await post(admin, id, 'cancel', { reason: 'Professional could not complete the job' });

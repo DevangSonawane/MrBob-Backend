@@ -10,6 +10,8 @@ const sections = [
   require('./paths/bookings'), // service catalogue, booking flow, admin bookings, dispatch
   require('./paths/vendorOnboarding'),
   require('./paths/account'), // the customer app's and the vendor app's profile and bookings
+  require('./paths/vendorJobs'), // the vendor's job flow, wallet, and the team's payouts
+  require('./paths/disputes'), // help & disputes: both apps and the support team
   require('./paths/users'), // also defines the "Super admin panel" section
   require('./paths/auth'),
   require('./paths/onboarding'),
@@ -44,6 +46,10 @@ module.exports = {
             '',
           ]),
       '**Customer app** and **Vendor app** — each app\'s profile (view, edit, delete) and bookings (list, detail) under `/customer/…` and `/vendor/…`.',
+      '',
+      '**Vendor jobs and wallet** — an approved vendor takes a job, starts and finishes it with the customer\'s codes, uploads photos and completes it (`/vendor/jobs/…`); the amount goes to their wallet (`/vendor/wallet`) and is paid out after a 2-day hold (`/payouts`).',
+      '',
+      '**Help & disputes** — a customer or vendor asks for help or raises a dispute (`/customer/disputes`, `/vendor/disputes`); the support team handles them under `/disputes`.',
       '',
       '**Booking flow** — service → date & time → problem description → payment, sent as one request. **Bookings (admin)** is how the team watches and manages them.',
       '',

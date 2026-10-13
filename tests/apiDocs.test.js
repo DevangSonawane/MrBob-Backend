@@ -40,6 +40,10 @@ describe('API documentation', () => {
       'POST /vendor-onboarding/applications/{id}/approve',
       'POST /amc/{id}/cancel',
       'POST /users/me/addresses/{addressId}/default',
+      'POST /vendor/jobs/{id}/accept',
+      'POST /vendor/jobs/{id}/complete',
+      'POST /customer/disputes/{id}/close',
+      'POST /vendor/disputes/{id}/close',
     ];
     Object.entries(spec.paths).forEach(([path, methods]) => {
       Object.entries(methods).forEach(([method, operation]) => {

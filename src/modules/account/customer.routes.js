@@ -5,6 +5,7 @@ const users = require('../users/users.controller');
 const usersSchema = require('../users/users.schema');
 const bookings = require('../bookings/bookings.controller');
 const bookingsSchema = require('../bookings/bookings.schema');
+const { addOwnRoutes: addDisputeRoutes } = require('../disputes/disputes.routes');
 
 // The customer app's own corner of the API: the signed-in customer's profile
 // and bookings under one prefix. Each route is the same logic as its general
@@ -18,5 +19,8 @@ router.delete('/profile', users.deleteMe);
 
 router.get('/bookings', validate(bookingsSchema.listBookings), bookings.list);
 router.get('/bookings/:id', validate(bookingsSchema.getBooking), bookings.getById);
+
+// Help & disputes raised by this customer.
+addDisputeRoutes(router);
 
 module.exports = router;

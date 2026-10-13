@@ -43,6 +43,7 @@ services:
       # ONBOARDING_VALIDATION=strict (when onboarding rules should be enforced; default is off),
       # SEED_SUPER_ADMIN_EMAIL, SEED_SUPER_ADMIN_PASSWORD (creates the admin dashboard login and the
       # starter city / services on the next deploy),
+      # PAYOUT_HOLD_DAYS (default 2) and PLATFORM_COMMISSION_PERCENT (default 0) for the vendor wallet,
       # OTP_STATIC_CODE (temporary fixed login OTP until SMS/WhatsApp is connected),
       # KYC_ENCRYPTION_KEY (openssl rand -base64 32 — vendor document uploads
       # return 503 in production until this and the R2_* values are set)

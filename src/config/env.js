@@ -56,6 +56,11 @@ const envSchema = z.object({
   // Where uploaded documents go when R2 isn't configured (dev/test only).
   UPLOAD_DIR: z.string().default('./uploads'),
 
+  // Vendor wallet: how long an earning is held after the job is completed
+  // before it is ready to be paid out, and the platform's share of each job.
+  PAYOUT_HOLD_DAYS: z.coerce.number().min(0).max(60).default(2),
+  PLATFORM_COMMISSION_PERCENT: z.coerce.number().min(0).max(100).default(0),
+
   LOG_LEVEL: z.string().default('info'),
 });
 

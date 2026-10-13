@@ -3,6 +3,7 @@ const validate = require('../../utils/validate');
 const { authenticate, authorize } = require('../../middlewares/auth');
 const controller = require('./bookings.controller');
 const schema = require('./bookings.schema');
+const { getImage: getCompletionImage } = require('../jobs/jobs.routes');
 
 const router = Router();
 
@@ -16,6 +17,7 @@ router.post('/', authenticate, authorize('CUSTOMER'), validate(schema.createBook
 router.get('/', authenticate, validate(schema.listBookings), controller.list);
 router.get('/summary', authenticate, authorize('ADMIN'), controller.getSummary);
 router.get('/:id', authenticate, validate(schema.getBooking), controller.getById);
+router.get('/:id/completion-images/:imageId', authenticate, ...getCompletionImage);
 router.delete('/:id', authenticate, authorize('SUPER_ADMIN'), validate(schema.getBooking), controller.remove);
 
 // Payment
@@ -26,6 +28,6 @@ router.post('/:id/payment/refund', authenticate, authorize('ADMIN'), validate(sc
 // Changes
 router.post('/:id/cancel', authenticate, authorize('CUSTOMER', 'ADMIN'), validate(schema.cancelBooking), controller.cancel);
 router.post('/:id/reschedule', authenticate, authorize('CUSTOMER', 'ADMIN'), validate(schema.rescheduleBooking), controller.reschedule);
-router.patch('/:id/status', authenticate, authorize('PROFESSIONAL', 'ADMIN'), validate(schema.updateStatus), controller.updateStatus);
+router.patch('/:id/status', authenticate, authorize('ADMIN'), validate(schema.updateStatus), controller.updateStatus);
 
 module.exports = router;

@@ -6,6 +6,9 @@ const users = require('../users/users.controller');
 const vendors = require('../vendorOnboarding/vendorOnboarding.service');
 const bookings = require('../bookings/bookings.controller');
 const bookingsSchema = require('../bookings/bookings.schema');
+const { addOwnRoutes: addDisputeRoutes } = require('../disputes/disputes.routes');
+const { addVendorRoutes: addJobRoutes } = require('../jobs/jobs.routes');
+const { addVendorRoutes: addWalletRoutes } = require('../wallet/wallet.routes');
 const schema = require('./account.schema');
 
 // The vendor app's own corner of the API: the signed-in vendor's profile and
@@ -21,5 +24,12 @@ router.delete('/profile', users.deleteMe);
 
 router.get('/bookings', validate(bookingsSchema.listBookings), bookings.list);
 router.get('/bookings/:id', validate(bookingsSchema.getBooking), bookings.getById);
+
+// Taking and doing jobs, and the money earned from them.
+addJobRoutes(router);
+addWalletRoutes(router);
+
+// Help & disputes raised by this vendor.
+addDisputeRoutes(router);
 
 module.exports = router;

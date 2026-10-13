@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const prisma = require('../../config/prisma');
 const env = require('../../config/env');
 const ApiError = require('../../utils/ApiError');
@@ -7,6 +8,7 @@ const { dateRange, personSearch } = require('../../utils/queryFilters');
 const razorpay = require('../payments/razorpay.client');
 const notifications = require('../notifications/notifications.service');
 const logger = require('../../config/logger');
+const wallet = require('../wallet/wallet.service');
 
 // The booking flow, as the customer app presents it:
 //
@@ -40,6 +42,10 @@ const CUSTOMER_CHANGEABLE = ['AWAITING_PAYMENT', 'PENDING', 'MATCHING', 'ASSIGNE
 const MIN_LEAD_MINUTES = 60;
 const MAX_ADVANCE_DAYS = 60;
 
+// A 4-digit code for starting or completing a job. While logins use a fixed
+// test code (OTP_STATIC_CODE), these do too, so the apps can be tested alone.
+const jobOtp = () => env.OTP_STATIC_CODE ?? String(crypto.randomInt(1000, 10000));
+
 const bookingNumber = (sequence) => `BK-${String(sequence).padStart(6, '0')}`;
 
 const bookingInclude = {
@@ -47,6 +53,7 @@ const bookingInclude = {
   city: { select: { id: true, name: true } },
   zone: { select: { id: true, name: true } },
   payment: true,
+  images: { select: { id: true, createdAt: true }, orderBy: { createdAt: 'asc' } },
   customer: { select: { id: true, name: true, phone: true, email: true } },
   // Only what a booking screen needs — the professional row also holds
   // personal onboarding details that must not reach customers.
@@ -88,6 +95,14 @@ const checkoutView = (booking) => {
   };
 };
 
+// START (enter the start code) -> VERIFY_COMPLETION_OTP -> UPLOAD_IMAGES -> COMPLETE.
+const nextJobStep = (booking) => {
+  if (booking.status === 'ASSIGNED') return 'START';
+  if (booking.status !== 'IN_PROGRESS') return null;
+  if (!booking.completionOtpVerifiedAt) return 'VERIFY_COMPLETION_OTP';
+  return booking.images.length === 0 ? 'UPLOAD_IMAGES' : 'COMPLETE';
+};
+
 const toView = (booking, viewer) => {
   const role = roleOf(viewer);
   const isCustomer = role === 'CUSTOMER';
@@ -123,6 +138,19 @@ const toView = (booking, viewer) => {
           photo: booking.professional.profilePhotoKey ? `/professionals/${booking.professional.id}/photo` : null,
         }
       : null,
+    // The codes the customer reads out to the vendor: one to start the job,
+    // then one to finish it. Never sent to the vendor.
+    otp:
+      role === 'PROFESSIONAL'
+        ? null
+        : {
+            start: booking.status === 'ASSIGNED' ? booking.startOtp : null,
+            completion: booking.status === 'IN_PROGRESS' && !booking.completionOtpVerifiedAt ? booking.completionOtp : null,
+          },
+    // Where the vendor is in the job, for the vendor app's next button.
+    job: { nextStep: nextJobStep(booking), completionOtpVerified: Boolean(booking.completionOtpVerifiedAt) },
+    // Photos of the finished work (each `url` needs the caller's token).
+    completionImages: booking.images.map((image) => ({ id: image.id, url: `/bookings/${booking.id}/completion-images/${image.id}`, uploadedAt: image.createdAt })),
     // Professionals and admins need to know who the job is for.
     customer: isCustomer ? undefined : booking.customer,
     cancellation: booking.cancelledAt ? { at: booking.cancelledAt, by: booking.cancelledBy, reason: booking.cancellationReason } : null,
@@ -416,7 +444,8 @@ const getSummary = async () => {
 const updateStatus = async (id, { status: next, note }, user) => {
   const booking = await load(id);
   assertCanSee(booking, user);
-  if (user.role === 'PROFESSIONAL' && next === 'MATCHING') throw ApiError.forbidden('Only an admin can do this');
+  // Vendors start and finish a job with the customer's codes (see modules/jobs); this is the team's override.
+  if (!isAdmin(user.role)) throw ApiError.forbidden('Start and complete a job with the customer\'s OTP');
 
   if (!ALLOWED_TRANSITIONS[booking.status].includes(next)) {
     throw ApiError.badRequest(`Cannot move a booking from ${booking.status} to ${next}`);
@@ -425,10 +454,16 @@ const updateStatus = async (id, { status: next, note }, user) => {
   await prisma.$transaction(async (tx) => {
     const { count } = await tx.booking.updateMany({
       where: { id, status: booking.status },
-      data: { status: next, ...(next === 'IN_PROGRESS' && { startedAt: new Date() }), ...(next === 'COMPLETED' && { completedAt: new Date() }) },
+      data: {
+        status: next,
+        // Started by the team: the vendor still finishes with the customer's completion code.
+        ...(next === 'IN_PROGRESS' && { startedAt: new Date(), startOtp: null, completionOtp: jobOtp(), completionOtpAttempts: 0 }),
+        ...(next === 'COMPLETED' && { completedAt: new Date(), completionOtp: null }),
+      },
     });
     if (count === 0) throw ApiError.conflict('This booking was just updated by someone else — reload and try again');
     await event(tx, id, user, { type: 'STATUS_CHANGED', fromStatus: booking.status, toStatus: next, note });
+    if (next === 'COMPLETED') await wallet.creditForBooking(tx, booking);
   });
 
   if (next === 'IN_PROGRESS') notify(booking.customerId, 'Work has started', `${booking.professional?.user.name ?? 'Your professional'} has started the job.`, booking);
@@ -497,6 +532,8 @@ const collectPayment = async (id, user, method) => {
     const data = { amount: booking.price, method, status: 'SUCCESS', paidAt: new Date() };
     await tx.payment.upsert({ where: { bookingId: id }, update: data, create: { bookingId: id, ...data } });
     await event(tx, id, user, { type: 'PAYMENT_COLLECTED', note: method });
+    // Cash goes straight to the vendor, so their earning for this job needs no payout.
+    if (method === 'CASH') await wallet.settleInCash(tx, id);
   });
   return detail(id, user);
 };
@@ -517,6 +554,9 @@ const markRefunded = async (id, user, reference) => {
 module.exports = {
   ALLOWED_TRANSITIONS,
   bookingNumber,
+  jobOtp,
+  // For the vendor job flow (modules/jobs), which shares these building blocks.
+  internals: { load, detail, event, notify, assertCanSee },
   create,
   confirmPayment,
   markPaid,

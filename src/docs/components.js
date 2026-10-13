@@ -269,6 +269,9 @@ const bookingExample = (stage, viewer = 'customer') => {
         ? { provider: 'razorpay', orderId: 'order_Pq1x2y3z4A5b6C', amount: 29900, currency: 'INR', keyId: 'rzp_test_AbCdEfGhIjKlMn', isTest: false }
         : null,
     professional: stage === 'assigned' ? { id: APPLICATION_ID, name: 'Ravi Kumar', phone: '+919812345678', rating: 4.8, photo: `/professionals/${APPLICATION_ID}/photo` } : null,
+    otp: viewer === 'vendor' ? null : { start: stage === 'assigned' ? '4821' : null, completion: null },
+    job: { nextStep: stage === 'assigned' ? 'START' : null, completionOtpVerified: false },
+    completionImages: [],
     ...(!customer && { customer: { id: 'd4c3b2a1-9999-4f8e-8d7c-6b5a4f3e2d1c', name: 'Aarav Mehta', phone: '+919898989898', email: 'aarav@example.com' } }),
     cancellation: stage === 'cancelled' ? { at: '2026-10-07T07:00:00.000Z', by: 'CUSTOMER', reason: 'Plans changed, will rebook next week' } : null,
     actions: {
@@ -592,6 +595,26 @@ const schemas = {
       professional: nullable(
         object({ id: id(), name: str('Ravi Kumar'), phone: nullable(str('+919812345678')), rating: { type: 'number', example: 4.8 }, photo: nullable(str('/professionals/…/photo')) }),
       ),
+      otp: {
+        ...nullable(
+          object({
+            start: nullable(str('4821', { description: 'While `ASSIGNED`: the customer reads this to the vendor so the job can start' })),
+            completion: nullable(str('7306', { description: 'While `IN_PROGRESS`: the customer reads this to the vendor when the work is done' })),
+          }),
+        ),
+        description: 'The job codes, shown in the customer app. Always `null` for the vendor, who must be told them by the customer.',
+      },
+      job: {
+        ...object({
+          nextStep: nullable(oneOf(['START', 'VERIFY_COMPLETION_OTP', 'UPLOAD_IMAGES', 'COMPLETE'], 'START')),
+          completionOtpVerified: { type: 'boolean' },
+        }),
+        description: 'Where the vendor is in the job — drive the vendor app\'s next button from `nextStep`',
+      },
+      completionImages: {
+        ...arrayOf(object({ id: id(), url: str('/bookings/…/completion-images/…', { description: 'API path; fetch with the caller\'s token' }), uploadedAt: dateTime() })),
+        description: 'Photos of the finished work, uploaded by the vendor',
+      },
       customer: { ...object({ id: id(), name: str('Aarav Mehta'), phone: nullable(str('+919812345678')), email: nullable(str()) }), description: 'Only in responses to professionals and admins' },
       cancellation: nullable(object({ at: dateTime(), by: oneOf(['CUSTOMER', 'PROFESSIONAL', 'ADMIN', 'SYSTEM']), reason: nullable(str('Plans changed')) })),
       actions: {

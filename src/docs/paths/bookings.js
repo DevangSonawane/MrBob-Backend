@@ -231,6 +231,17 @@ module.exports = {
       }),
     },
 
+    '/bookings/{id}/completion-images/{imageId}': {
+      get: op({
+        tag: [FLOW, ADMIN],
+        summary: 'Download a photo of the finished work',
+        description: 'The `url` of each entry in a booking\'s `completionImages` points here. Available to the booking\'s customer, the vendor on the job, and admins.',
+        params: [bookingId, pathParam('imageId', 'Photo id')],
+        responses: { 200: fileResponse('The image', ['image/jpeg', 'image/png', 'image/webp']) },
+        errors: [403, 404],
+      }),
+    },
+
     '/bookings/{id}/payment/confirm': {
       post: op({
         tag: FLOW,
@@ -294,11 +305,11 @@ module.exports = {
         tag: ADMIN,
         summary: 'Move a booking along',
         description:
-          'An **admin** can set `MATCHING`, `IN_PROGRESS` or `COMPLETED`; the **assigned professional** can set `IN_PROGRESS` (work started) ' +
-          'and `COMPLETED` (work done) on their own jobs.\n\n' +
+          'The team\'s override: an admin can set `MATCHING`, `IN_PROGRESS` or `COMPLETED` by hand. Vendors do not use this — they start and ' +
+          'finish a job with the customer\'s codes (see **Vendor app — jobs**). Completing a booking here also credits the vendor\'s wallet.\n\n' +
           'Allowed moves: `PENDING → MATCHING`, `ASSIGNED → IN_PROGRESS`, `IN_PROGRESS → COMPLETED`; anything else is **400**. ' +
           'Assigning a professional is done through **Dispatch**, cancelling through **Cancel a booking**, and payment through its own endpoints.',
-        access: ['PROFESSIONAL', 'ADMIN'],
+        access: 'ADMIN',
         params: [bookingId],
         body: jsonBody(
           {
