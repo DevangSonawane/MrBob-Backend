@@ -5,6 +5,8 @@ const onboardingRoutes = require('../modules/onboarding/onboarding.routes');
 const customerOnboardingRoutes = require('../modules/customerOnboarding/customerOnboarding.routes');
 const vendorOnboardingRoutes = require('../modules/vendorOnboarding/vendorOnboarding.routes');
 const usersRoutes = require('../modules/users/users.routes');
+const customerAppRoutes = require('../modules/account/customer.routes');
+const vendorAppRoutes = require('../modules/account/vendor.routes');
 const professionalsRoutes = require('../modules/professionals/professionals.routes');
 const bookingsRoutes = require('../modules/bookings/bookings.routes');
 const categoriesRoutes = require('../modules/bookings/categories.routes');
@@ -24,6 +26,8 @@ const mounts = [
   ['/customer-onboarding', customerOnboardingRoutes],
   ['/vendor-onboarding', vendorOnboardingRoutes],
   ['/users', usersRoutes],
+  ['/customer', customerAppRoutes],
+  ['/vendor', vendorAppRoutes],
   ['/professionals', professionalsRoutes],
   ['/bookings', bookingsRoutes],
   ['/categories', categoriesRoutes],

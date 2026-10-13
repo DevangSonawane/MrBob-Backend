@@ -300,6 +300,89 @@ const getMyApplication = async (userId) => {
   return buildView({ onboardingStatus: 'NOT_STARTED', categories: [], documents: [], user });
 };
 
+// ---------------------------------------------------------------------------
+// The vendor's own profile (the app's profile screen)
+// ---------------------------------------------------------------------------
+
+const OPEN_JOB_STATUSES = ['ASSIGNED', 'IN_PROGRESS'];
+
+const getMyProfile = async (userId) => {
+  const [view, record] = await Promise.all([
+    getMyApplication(userId),
+    prisma.professional.findUnique({ where: { userId }, select: { id: true, rating: true, createdAt: true, user: { select: { createdAt: true, isActive: true } } } }),
+  ]);
+  const jobs = record ? await prisma.booking.groupBy({ by: ['status'], where: { professionalId: record.id }, _count: { _all: true } }) : [];
+  const count = (statuses) => jobs.filter((row) => statuses.includes(row.status)).reduce((sum, row) => sum + row._count._all, 0);
+
+  return {
+    userId,
+    professionalId: view.id,
+    status: view.status,
+    // Only an approved vendor is sent jobs.
+    isVerified: view.status === 'APPROVED',
+    rating: record ? Number(record.rating) : 0,
+    profilePhoto: view.profilePhoto,
+    joinedAt: record?.createdAt ?? null,
+    personalDetails: view.personalDetails,
+    services: view.services,
+    jobs: { total: jobs.reduce((sum, row) => sum + row._count._all, 0), open: count(OPEN_JOB_STATUSES), completed: count(['COMPLETED']), cancelled: count(['CANCELLED']) },
+  };
+};
+
+// Edits the profile at any stage, including after approval. Only what is sent
+// changes; null clears a field. Identity documents and bank details are not
+// part of the profile — those go through onboarding and are re-verified.
+const updateMyProfile = async (userId, body) => {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || user.deletedAt) throw ApiError.notFound('User not found');
+  await prisma.professional.upsert({ where: { userId }, update: {}, create: { userId, categories: [] } });
+  const current = await loadByUserId(userId);
+
+  if (body.email && body.email !== user.email) {
+    const taken = await prisma.user.findUnique({ where: { email: body.email } });
+    if (taken) throw ApiError.conflict('This email is already linked to another account');
+  }
+
+  const cityId = body.cityId === undefined ? user.cityId : body.cityId;
+  if (body.cityId) {
+    const city = await prisma.city.findUnique({ where: { id: body.cityId } });
+    if (!city || !city.isActive) throw ApiError.badRequest('Unknown or inactive city');
+  }
+  // A zone belongs to a city: moving city drops a zone that was not chosen again.
+  let homeZoneId = body.homeZoneId;
+  if (homeZoneId === undefined && cityId !== user.cityId) homeZoneId = null;
+  if (homeZoneId) {
+    const zone = await prisma.zone.findUnique({ where: { id: homeZoneId } });
+    if (!zone || !zone.isActive || zone.cityId !== cityId) throw ApiError.badRequest('Choose a zone in your city');
+  }
+
+  let categories;
+  if (body.categories !== undefined) {
+    categories = [...new Set(body.categories)];
+    const found = await prisma.serviceCategory.count({ where: { id: { in: categories }, isActive: true } });
+    if (found !== categories.length) throw ApiError.badRequest('One or more services are unknown or no longer offered');
+  }
+
+  const pick = (keys) => Object.fromEntries(keys.filter((key) => body[key] !== undefined).map((key) => [key, body[key] === '' ? null : body[key]]));
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: userId },
+      // A name or email cannot be blanked, only replaced.
+      data: { ...(body.name && { name: body.name }), ...(body.email && { email: body.email }), ...(body.cityId !== undefined && { cityId }) },
+    }),
+    prisma.professional.update({
+      where: { id: current.id },
+      data: {
+        ...pick(['gender', 'alternatePhone', 'addressLine1', 'addressLine2', 'landmark', 'pincode', 'state', 'emergencyContactName', 'emergencyContactPhone', 'experienceYears']),
+        ...(body.dateOfBirth !== undefined && { dateOfBirth: body.dateOfBirth ? new Date(`${body.dateOfBirth}T00:00:00.000Z`) : null }),
+        ...(homeZoneId !== undefined && { homeZoneId }),
+        ...(categories && { categories }),
+      },
+    }),
+  ]);
+  return getMyProfile(userId);
+};
+
 // Small payload for polling while the application is being verified (step 4).
 const getMyStatus = async (userId) => {
   const application = await prisma.professional.findUnique({
@@ -964,6 +1047,8 @@ module.exports = {
   verifyOtp,
   getMyApplication,
   getMyStatus,
+  getMyProfile,
+  updateMyProfile,
   savePersonalDetails,
   saveServices,
   saveDocument,

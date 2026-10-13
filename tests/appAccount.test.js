@@ -1,0 +1,130 @@
+const request = require('supertest');
+const app = require('../src/app');
+const prisma = require('../src/config/prisma');
+const { issueTokenPair } = require('../src/modules/auth/token.util');
+
+const API = '/api/v1';
+const run = Date.now().toString(36);
+
+// The customer app's and the vendor app's own endpoints: /customer/… and /vendor/…
+describe('Customer and vendor app: profile and bookings', () => {
+  const made = { users: [], cities: [], categories: [] };
+  let customer;
+  let other;
+  let vendor;
+  let city;
+  let zone;
+  let category;
+  let booking;
+
+  const make = async (role, label, data = {}) => {
+    const user = await prisma.user.create({ data: { name: `${label} ${run}`, phone: `+91${String(Date.now()).slice(-6)}${made.users.length}000`.slice(0, 13), role, ...data } });
+    made.users.push(user.id);
+    return { ...user, auth: { Authorization: `Bearer ${issueTokenPair(user).accessToken}` } };
+  };
+  const get = (who, path) => request(app).get(`${API}${path}`).set(who.auth);
+
+  beforeAll(async () => {
+    city = await prisma.city.create({ data: { name: `App City ${run}`, tier: 'TIER_1' } });
+    made.cities.push(city.id);
+    zone = await prisma.zone.create({ data: { cityId: city.id, name: 'Central' } });
+    category = await prisma.serviceCategory.create({ data: { name: `App Service ${run}`, tier: 'REPAIR', basePrice: 300 } });
+    made.categories.push(category.id);
+
+    customer = await make('CUSTOMER', 'app-customer');
+    other = await make('CUSTOMER', 'app-other');
+    vendor = await make('PROFESSIONAL', 'app-vendor');
+    const profile = await prisma.professional.create({ data: { userId: vendor.id, categories: [], onboardingStatus: 'APPROVED', kycStatus: 'VERIFIED' } });
+    vendor.professionalId = profile.id;
+
+    booking = await prisma.booking.create({
+      data: { customerId: customer.id, professionalId: profile.id, categoryId: category.id, status: 'ASSIGNED', scheduledAt: new Date(Date.now() + 86400000), address: '1 App Road', price: 300, description: 'Fan is not working' },
+    });
+    await prisma.booking.create({ data: { customerId: other.id, categoryId: category.id, status: 'PENDING', address: '2 Other Road', price: 300, description: 'Tap is leaking badly' } });
+  });
+
+  afterAll(async () => {
+    await prisma.booking.deleteMany({ where: { categoryId: { in: made.categories } } });
+    await prisma.professional.deleteMany({ where: { userId: { in: made.users } } });
+    await prisma.user.deleteMany({ where: { id: { in: made.users } } });
+    await prisma.serviceCategory.deleteMany({ where: { id: { in: made.categories } } });
+    await prisma.zone.deleteMany({ where: { cityId: { in: made.cities } } });
+    await prisma.city.deleteMany({ where: { id: { in: made.cities } } });
+  });
+
+  it('keeps each app to its own role', async () => {
+    expect((await request(app).get(`${API}/customer/profile`)).status).toBe(401);
+    expect((await get(vendor, '/customer/profile')).status).toBe(403);
+    expect((await get(customer, '/vendor/profile')).status).toBe(403);
+    expect((await get(customer, '/vendor/bookings')).status).toBe(403);
+  });
+
+  it('lets a customer view and edit their profile', async () => {
+    const profile = await get(customer, '/customer/profile');
+    expect(profile.status).toBe(200);
+    expect(profile.body.data).toMatchObject({ id: customer.id, role: 'CUSTOMER', addresses: [] });
+    expect(profile.body.data).not.toHaveProperty('passwordHash');
+
+    const edited = await request(app).patch(`${API}/customer/profile`).set(customer.auth).send({ name: 'Asha Rao', gender: 'FEMALE' });
+    expect(edited.status).toBe(200);
+    expect(edited.body.data).toMatchObject({ name: 'Asha Rao', gender: 'FEMALE' });
+  });
+
+  it('gives a customer only their own bookings, and the detail of one', async () => {
+    const list = await get(customer, '/customer/bookings');
+    expect(list.status).toBe(200);
+    expect(list.body.items.map((item) => item.id)).toEqual([booking.id]);
+    expect(list.body.meta.total).toBe(1);
+    expect((await get(customer, '/customer/bookings?scope=past')).body.items).toEqual([]);
+
+    const detail = await get(customer, `/customer/bookings/${booking.id}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body.data).toMatchObject({ id: booking.id, status: 'ASSIGNED', professional: { id: vendor.professionalId } });
+    expect(Array.isArray(detail.body.data.timeline)).toBe(true);
+    expect((await get(other, `/customer/bookings/${booking.id}`)).status).toBe(403);
+  });
+
+  it('gives a vendor their profile, jobs and job detail', async () => {
+    const profile = await get(vendor, '/vendor/profile');
+    expect(profile.status).toBe(200);
+    expect(profile.body.data).toMatchObject({ userId: vendor.id, professionalId: vendor.professionalId, status: 'APPROVED', isVerified: true, jobs: { total: 1, open: 1, completed: 0 } });
+
+    const jobs = await get(vendor, '/vendor/bookings');
+    expect(jobs.body.items.map((item) => item.id)).toEqual([booking.id]);
+    const job = await get(vendor, `/vendor/bookings/${booking.id}`);
+    expect(job.status).toBe(200);
+    expect(job.body.data.customer).toMatchObject({ id: customer.id });
+  });
+
+  it('lets a vendor edit their profile, even after approval', async () => {
+    const patch = (body) => request(app).patch(`${API}/vendor/profile`).set(vendor.auth).send(body);
+    expect((await patch({})).status).toBe(400);
+    expect((await patch({ cityId: city.id, homeZoneId: '7a6b5c4d-3333-4e2f-9a1b-0c9d8e7f6a5b' })).status).toBe(400);
+    expect((await patch({ categories: ['3f2e1d0c-2222-4b3a-8c7d-6e5f4a3b2c1d'] })).status).toBe(400);
+
+    const saved = await patch({ name: 'Ravi K', addressLine1: '14, 2nd Main Road', pincode: '560034', cityId: city.id, homeZoneId: zone.id, experienceYears: 7, categories: [category.id], dateOfBirth: '1990-05-17' });
+    expect(saved.status).toBe(200);
+    expect(saved.body.data).toMatchObject({
+      status: 'APPROVED',
+      personalDetails: { name: 'Ravi K', addressLine1: '14, 2nd Main Road', pincode: '560034', city: { id: city.id }, dateOfBirth: '1990-05-17' },
+      services: { experienceYears: 7, homeZone: { id: zone.id }, categories: [{ id: category.id }] },
+    });
+
+    // Only what is sent changes; null clears.
+    const cleared = await patch({ pincode: null });
+    expect(cleared.body.data.personalDetails).toMatchObject({ addressLine1: '14, 2nd Main Road', pincode: null });
+  });
+
+  it('refuses to delete an account with a job in progress, then deletes it', async () => {
+    expect((await request(app).delete(`${API}/vendor/profile`).set(vendor.auth)).status).toBe(409);
+    expect((await request(app).delete(`${API}/customer/profile`).set(customer.auth)).status).toBe(409);
+
+    await prisma.booking.update({ where: { id: booking.id }, data: { status: 'COMPLETED' } });
+    const gone = await request(app).delete(`${API}/customer/profile`).set(customer.auth);
+    expect(gone.status).toBe(200);
+    expect(gone.body.data).toEqual({ deleted: true });
+    expect((await prisma.user.findUnique({ where: { id: customer.id } })).deletedAt).not.toBeNull();
+
+    expect((await request(app).delete(`${API}/vendor/profile`).set(vendor.auth)).body.data).toEqual({ deleted: true });
+  });
+});

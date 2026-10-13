@@ -9,6 +9,7 @@ const sections = [
   require('./paths/customer'), // customer onboarding steps + "My account"
   require('./paths/bookings'), // service catalogue, booking flow, admin bookings, dispatch
   require('./paths/vendorOnboarding'),
+  require('./paths/account'), // the customer app's and the vendor app's profile and bookings
   require('./paths/users'), // also defines the "Super admin panel" section
   require('./paths/auth'),
   require('./paths/onboarding'),
@@ -42,6 +43,8 @@ module.exports = {
               'The only input check is the OTP, which must be 4 digits and correct. The rules below describe what will apply once it is switched back on.',
             '',
           ]),
+      '**Customer app** and **Vendor app** — each app\'s profile (view, edit, delete) and bookings (list, detail) under `/customer/…` and `/vendor/…`.',
+      '',
       '**Booking flow** — service → date & time → problem description → payment, sent as one request. **Bookings (admin)** is how the team watches and manages them.',
       '',
       '**Vendor onboarding in five steps** — phone number → verify OTP → enter details → verify vendor → vendor verified.',
