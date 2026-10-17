@@ -16,6 +16,13 @@ const page = (res, result) => res.status(200).json({ success: true, ...result })
 
 // The vendor's own wallet. Mounted inside /vendor, which already restricts the role.
 const addVendorRoutes = (router) => {
+  // Where the vendor is paid. Changes are checked by the team before payouts go there.
+  router.get('/payout-account', catchAsync(async (req, res) => ok(res, await payoutAccount.get(await payoutAccount.professionalIdOf(req.user.id)))));
+  router.put(
+    '/payout-account',
+    validate(schema.setOwnPayoutAccount),
+    catchAsync(async (req, res) => ok(res, await payoutAccount.set(await payoutAccount.professionalIdOf(req.user.id), req.body, req.user, { byVendor: true }))),
+  );
   router.get('/wallet', catchAsync(async (req, res) => ok(res, await service.getMyWallet(req.user))));
   router.get('/wallet/transactions', validate(schema.listTransactions), catchAsync(async (req, res) => page(res, await service.listMyTransactions(req.user, req.query))));
   router.get('/wallet/pending', validate(schema.listPending), catchAsync(async (req, res) => page(res, await service.listMyPending(req.user, req.query))));
@@ -54,6 +61,7 @@ router.post('/refresh', catchAsync(async (req, res) => ok(res, await service.ref
 
 // Where a vendor is paid: bank account and UPI id.
 router.get('/vendors/:professionalId/payout-account', validate(schema.vendorWallet), catchAsync(async (req, res) => ok(res, await payoutAccount.get(req.params.professionalId))));
+router.post('/vendors/:professionalId/payout-account/verify', validate(schema.vendorWallet), catchAsync(async (req, res) => ok(res, await payoutAccount.verify(req.params.professionalId, req.user))));
 router.put('/vendors/:professionalId/payout-account', authorize('SUPER_ADMIN'), validate(schema.setPayoutAccount), catchAsync(async (req, res) => ok(res, await payoutAccount.set(req.params.professionalId, req.body, req.user))));
 
 router.get('/', validate(schema.listPayouts), catchAsync(async (req, res) => page(res, await service.listPayouts(req.query))));

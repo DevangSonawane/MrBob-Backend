@@ -74,10 +74,8 @@ const sendPayout = {
 };
 
 // Where the vendor is paid. Only what is sent changes; empty upiId removes it.
-const setPayoutAccount = {
-  params: professionalId,
-  body: z
-    .object({
+const payoutAccountBody = z
+  .object({
       accountHolderName: z.string().trim().min(2).max(100).optional(),
       accountNumber: z.string().trim().regex(/^\d[\d\s]{7,19}$/, 'Account number must be 9 to 18 digits').optional(),
       ifsc: z.string().trim().toUpperCase().regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, 'IFSC looks like HDFC0001234').optional(),
@@ -85,9 +83,11 @@ const setPayoutAccount = {
       branchName: z.string().trim().max(100).nullish(),
       accountType: z.enum(['SAVINGS', 'CURRENT']).nullish(),
       upiId: z.union([z.string().trim().regex(/^[\w.-]{2,256}@[a-zA-Z]{2,64}$/, 'UPI id looks like name@bank'), z.literal('')]).optional(),
-    })
-    .refine((data) => Object.keys(data).length > 0, { message: 'Nothing to change' }),
-};
+  })
+  .refine((data) => Object.keys(data).length > 0, { message: 'Nothing to change' });
+const setPayoutAccount = { params: professionalId, body: payoutAccountBody };
+const setOwnPayoutAccount = { body: payoutAccountBody };
+
 const listPayouts = { query: paginationQuery.extend({ professionalId: z.uuid().optional(), search: z.string().trim().min(1).max(100).optional() }) };
 
-module.exports = { sendPayout, setPayoutAccount, updateSettings, setVendorTerms, setManyVendorTerms, listVendorTerms, listTransactions, listPending, listDue, vendorWallet, vendorTransactions, vendorPending, createPayout, listPayouts };
+module.exports = { sendPayout, setPayoutAccount, setOwnPayoutAccount, updateSettings, setVendorTerms, setManyVendorTerms, listVendorTerms, listTransactions, listPending, listDue, vendorWallet, vendorTransactions, vendorPending, createPayout, listPayouts };

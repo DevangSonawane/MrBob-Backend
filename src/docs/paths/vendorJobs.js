@@ -498,6 +498,42 @@ module.exports = {
         responses: { 200: ok('Received', { type: 'object', properties: { handled: { type: 'boolean' } } }, { handled: true }) },
       }),
     },
+    '/vendor/payout-account': {
+      get: op({
+        tag: WALLET,
+        summary: 'My bank account and UPI id',
+        description: 'Where the vendor\'s payouts are sent. The account number is only shown masked. `status` is `VERIFIED` once the team has checked the details.',
+        access: 'PROFESSIONAL',
+        responses: { 200: ok('Where I am paid', payoutAccount, payoutAccountExample) },
+        errors: [404],
+      }),
+      put: op({
+        tag: WALLET,
+        summary: 'Add or change my bank account or UPI id',
+        description:
+          'Send only what changes. The account number is needed (with the IFSC) the first time a bank account is added; afterwards leave it out ' +
+          'to keep it. An empty `upiId` removes it. Any change goes back to `PENDING` until the team checks it, and payouts are only sent to ' +
+          'checked details. **409** if the account belongs to another vendor.',
+        access: 'PROFESSIONAL',
+        body: jsonBody(
+          { type: 'object', minProperties: 1, properties: { accountHolderName: { type: 'string' }, accountNumber: { type: 'string', description: '9 to 18 digits' }, ifsc: { type: 'string', example: 'HDFC0001234' }, bankName: { type: 'string' }, branchName: { type: 'string' }, accountType: { type: 'string', enum: ['SAVINGS', 'CURRENT'] }, upiId: { type: 'string', example: 'ravi@okhdfc' } } },
+          { accountHolderName: 'Ravi Kumar', accountNumber: '50100123456789', ifsc: 'HDFC0001234', bankName: 'HDFC Bank', upiId: 'ravi@okhdfc' },
+        ),
+        responses: { 200: ok('Where I am paid', payoutAccount, { ...payoutAccountExample, status: 'PENDING' }) },
+        errors: [404, 409],
+      }),
+    },
+    '/payouts/vendors/{professionalId}/payout-account/verify': {
+      post: op({
+        tag: PAYOUTS,
+        summary: 'Mark a vendor\'s bank details as checked',
+        description: 'For details the vendor entered themselves: once verified, payouts can be sent there. **400** if there is nothing to verify.',
+        access: 'ADMIN',
+        params: [professionalId],
+        responses: { 200: ok('Where the vendor is paid', payoutAccount, payoutAccountExample) },
+        errors: [404],
+      }),
+    },
     '/payouts/vendors/{professionalId}/payout-account': {
       get: op({
         tag: PAYOUTS,

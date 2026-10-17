@@ -50,7 +50,9 @@ const destinationFor = async (professionalId) => {
 
 // Only the fields sent change. The account number is needed to add a bank
 // account the first time; afterwards it may be left out to keep it.
-const set = async (professionalId, body, actor) => {
+// Details entered by the team count as verified; details a vendor enters
+// themselves wait for the team to check them before money is sent there.
+const set = async (professionalId, body, actor, { byVendor = false } = {}) => {
   const { documents } = await find(professionalId);
   const existing = documents[0];
   const accountNumber = body.accountNumber?.replace(/\s/g, '') || null;
@@ -74,12 +76,9 @@ const set = async (professionalId, body, actor) => {
     ...(body.branchName !== undefined && { branchName: body.branchName }),
     ...(body.accountType !== undefined && { accountType: body.accountType }),
     ...(body.upiId !== undefined && { upiId: body.upiId || null }),
-    // Entered by the team, so checked.
-    status: 'VERIFIED',
-    rejectionReason: null,
-    verificationSource: 'MANUAL',
-    verifiedById: actor.id,
-    verifiedAt: new Date(),
+    ...(byVendor
+      ? { status: 'PENDING', rejectionReason: null, verificationSource: null, verifiedById: null, verifiedAt: null }
+      : { status: 'VERIFIED', rejectionReason: null, verificationSource: 'MANUAL', verifiedById: actor.id, verifiedAt: new Date() }),
   };
 
   await prisma.$transaction(async (tx) => {
@@ -100,4 +99,20 @@ const set = async (professionalId, body, actor) => {
   return get(professionalId);
 };
 
-module.exports = { get, set, destinationFor };
+// The team confirms details a vendor entered.
+const verify = async (professionalId, actor) => {
+  const { documents } = await find(professionalId);
+  const doc = documents[0];
+  if (!doc || !(doc.numberLast4 || doc.upiId)) throw ApiError.badRequest('This vendor has no bank account or UPI id to verify');
+  await prisma.professionalDocument.update({ where: { id: doc.id }, data: { status: 'VERIFIED', rejectionReason: null, verificationSource: 'MANUAL', verifiedById: actor.id, verifiedAt: new Date() } });
+  return get(professionalId);
+};
+
+// The signed-in vendor's own professional id.
+const professionalIdOf = async (userId) => {
+  const professional = await prisma.professional.findUnique({ where: { userId }, select: { id: true } });
+  if (!professional) throw ApiError.notFound('Finish vendor onboarding first');
+  return professional.id;
+};
+
+module.exports = { get, set, verify, destinationFor, professionalIdOf };

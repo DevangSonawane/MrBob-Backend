@@ -522,6 +522,20 @@ describe('Paying vendors: bank details, send now, automatic run and provider upd
     expect(JSON.stringify(saved.body.data)).not.toContain('50100123456789');
   });
 
+  it('lets the vendor change their own details, which wait for the team to check them', async () => {
+    const vendorCall = (method, body) => request(app)[method](`${API}/vendor/payout-account`).set(vendor.auth).send(body);
+    expect((await vendorCall('get')).body.data).toMatchObject({ status: 'VERIFIED', upiId: 'ravi@okhdfc' });
+    expect((await request(app).get(`${API}/vendor/payout-account`).set(customer.auth)).status).toBe(403);
+
+    const changed = await vendorCall('put', { upiId: 'ravi.k@okaxis' });
+    expect(changed.body.data).toMatchObject({ status: 'PENDING', upiId: 'ravi.k@okaxis', maskedAccountNumber: 'XXXX6789' });
+    // Not sent to unchecked details.
+    expect((await call(superAdmin, 'post', `/payouts/vendors/${vendor.professionalId}/send`, {})).body.message).toContain('not verified');
+
+    const verified = await call(admin, 'post', `/payouts/vendors/${vendor.professionalId}/payout-account/verify`);
+    expect(verified.body.data.status).toBe('VERIFIED');
+  });
+
   it('sends the vendor\'s money now, and shows it in their transactions', async () => {
     const sent = await call(superAdmin, 'post', `/payouts/vendors/${vendor.professionalId}/send`, {});
     expect(sent.status).toBe(201);
