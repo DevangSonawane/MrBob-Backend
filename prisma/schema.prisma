@@ -135,9 +135,14 @@ model Professional {
   categories String[] // ServiceCategory ids this professional serves
   kycStatus  KycStatus @default(PENDING)
   rating     Decimal   @default(0) @db.Decimal(3, 2)
-  homeZoneId String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+
+  // Payout terms for this vendor; null = the platform default (PayoutSettings).
+  commissionPercent Decimal?      @db.Decimal(5, 2)
+  payoutHoldDays    Int?
+  payoutMethod      PayoutMethod?
+  homeZoneId        String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
   // Onboarding: personal details (name, phone, email and city live on User)
   onboardingStatus      VendorOnboardingStatus @default(DRAFT)
@@ -703,20 +708,52 @@ model WalletEntry {
 }
 
 model VendorPayout {
-  id             String   @id @default(uuid())
+  id             String       @id @default(uuid())
   // Human-friendly reference shown to vendors and the team as PO-000123.
-  sequence       Int      @unique @default(autoincrement())
+  sequence       Int          @unique @default(autoincrement())
   professionalId String
-  amount         Decimal  @db.Decimal(10, 2)
+  amount         Decimal      @db.Decimal(10, 2)
   reference      String // the bank / UPI transaction reference
+  method         PayoutMethod @default(BANK_TRANSFER)
   note           String?
-  paidAt         DateTime @default(now())
+  paidAt         DateTime     @default(now())
   createdById    String?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime     @default(now())
 
   professional Professional  @relation(fields: [professionalId], references: [id], onDelete: Cascade)
   entries      WalletEntry[]
 
   @@index([professionalId, createdAt])
   @@map("vendor_payouts")
+}
+
+// How vendors are paid out, and the platform's defaults. One row (id 1),
+// edited by a super admin from the dashboard. A vendor can have their own
+// commission, hold period and method (columns on Professional).
+enum PayoutMethod {
+  BANK_TRANSFER // NEFT / IMPS / RTGS to the vendor's bank account
+  UPI // to the vendor's UPI id
+  CASH // handed over in person
+}
+
+enum PayoutFrequency {
+  AFTER_HOLD // pay each earning as soon as its hold ends
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
+model PayoutSettings {
+  id                Int             @id @default(1)
+  holdDays          Int             @default(2)
+  commissionPercent Decimal         @default(0) @db.Decimal(5, 2)
+  payoutMethod      PayoutMethod    @default(BANK_TRANSFER)
+  frequency         PayoutFrequency @default(AFTER_HOLD)
+  // The first scheduled payout day; later ones repeat from it (weekly, every
+  // two weeks, or monthly on the same day of the month).
+  firstPayoutDate   DateTime?       @db.Date
+  updatedById       String?
+  updatedAt         DateTime        @updatedAt
+
+  @@map("payout_settings")
 }

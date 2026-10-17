@@ -4,6 +4,9 @@ const { examples } = require('../components');
 const JOBS = 'Vendor app — jobs';
 const WALLET = 'Vendor app — wallet';
 const PAYOUTS = 'Vendor payouts (admin)';
+const TERMS = 'Payout settings (admin)';
+const METHODS = ['BANK_TRANSFER', 'UPI', 'CASH'];
+const FREQUENCIES = ['AFTER_HOLD', 'WEEKLY', 'BIWEEKLY', 'MONTHLY'];
 
 const jobId = pathParam('id', 'Booking id');
 const professionalId = pathParam('professionalId', 'Vendor (professional) id');
@@ -104,6 +107,10 @@ const wallet = {
     totalEarned: amount('All of the above together'),
     jobsPaidFor: { type: 'integer' },
     holdDays: { type: 'integer', example: 2, description: 'How long an earning is held after the job is completed' },
+    commissionPercent: { type: 'number', example: 10, description: 'The platform\'s share of each job for this vendor' },
+    payoutMethod: { type: 'string', enum: METHODS },
+    payoutFrequency: { type: 'string', enum: FREQUENCIES },
+    nextPayoutDate: { type: 'string', format: 'date', nullable: true, description: 'The next scheduled payout day; null when earnings are paid as soon as their hold ends' },
     nextRelease: { type: 'object', nullable: true, description: 'The next earning to come off hold', properties: { at: dateTime, amount: amount() } },
     lastPayout: { type: 'object', nullable: true, properties: { id: uuid, payoutNumber: { type: 'string' }, amount: amount(), paidAt: dateTime, reference: { type: 'string' } } },
   },
@@ -118,6 +125,10 @@ const walletExample = {
   totalEarned: 2696,
   jobsPaidFor: 9,
   holdDays: 2,
+  commissionPercent: 10,
+  payoutMethod: 'BANK_TRANSFER',
+  payoutFrequency: 'WEEKLY',
+  nextPayoutDate: '2026-10-20',
   nextRelease: { at: '2026-10-11T06:15:00.000Z', amount: 299 },
   lastPayout: { id: payoutRef.id, payoutNumber: payoutRef.payoutNumber, amount: 1450, paidAt: payoutRef.paidAt, reference: payoutRef.reference },
 };
@@ -138,9 +149,41 @@ const vendorRef = { type: 'object', properties: { professionalId: uuid, userId: 
 const vendorExample = { professionalId: examples.APPLICATION_ID, userId: '9c8b7a6d-5555-4f4e-8d3c-2b1a0f9e8d7c', name: 'Ravi Kumar', phone: '+919812345678' };
 const payout = {
   type: 'object',
-  properties: { id: uuid, payoutNumber: { type: 'string' }, vendor: vendorRef, amount: amount(), reference: { type: 'string' }, note: { type: 'string', nullable: true }, earningsCovered: { type: 'integer' }, paidAt: dateTime, createdAt: dateTime },
+  properties: { id: uuid, payoutNumber: { type: 'string' }, vendor: vendorRef, amount: amount(), reference: { type: 'string' }, method: { type: 'string', enum: METHODS }, note: { type: 'string', nullable: true }, earningsCovered: { type: 'integer' }, paidAt: dateTime, createdAt: dateTime },
 };
-const payoutExample = { id: payoutRef.id, payoutNumber: payoutRef.payoutNumber, vendor: vendorExample, amount: 598, reference: payoutRef.reference, note: null, earningsCovered: 2, paidAt: '2026-10-13T11:00:00.000Z', createdAt: '2026-10-13T11:00:00.000Z' };
+const payoutExample = { id: payoutRef.id, payoutNumber: payoutRef.payoutNumber, vendor: vendorExample, amount: 598, reference: payoutRef.reference, method: 'BANK_TRANSFER', note: null, earningsCovered: 2, paidAt: '2026-10-13T11:00:00.000Z', createdAt: '2026-10-13T11:00:00.000Z' };
+
+const settingsSchema = {
+  type: 'object',
+  properties: {
+    holdDays: { type: 'integer', minimum: 0, maximum: 60, description: 'Days an earning is held after the job is completed' },
+    commissionPercent: { type: 'number', minimum: 0, maximum: 100, description: 'The platform\'s share of each job' },
+    payoutMethod: { type: 'string', enum: METHODS, description: 'How vendors are paid by default' },
+    frequency: { type: 'string', enum: FREQUENCIES, description: '`AFTER_HOLD` pays each earning once its hold ends; the others pay on a schedule' },
+    firstPayoutDate: { type: 'string', format: 'date', nullable: true, description: 'The first scheduled payout day; later ones repeat from it' },
+    upcomingPayoutDates: { type: 'array', items: { type: 'string', format: 'date' }, description: 'The next three scheduled payout days (read only)' },
+    updatedAt: { type: 'string', format: 'date-time', nullable: true },
+  },
+};
+const settingsExample = { holdDays: 2, commissionPercent: 10, payoutMethod: 'BANK_TRANSFER', frequency: 'WEEKLY', firstPayoutDate: '2026-10-20', upcomingPayoutDates: ['2026-10-20', '2026-10-27', '2026-11-03'], updatedAt: '2026-10-18T09:00:00.000Z' };
+const termsSchema = {
+  type: 'object',
+  properties: {
+    ...vendorRef.properties,
+    status: { type: 'string', description: 'Vendor onboarding status' },
+    bankAccountStatus: { type: 'string' },
+    commissionPercent: { type: 'number', description: 'In effect: the vendor\'s own, or the default' },
+    holdDays: { type: 'integer' },
+    payoutMethod: { type: 'string', enum: METHODS },
+    custom: { type: 'object', description: 'The vendor\'s own values; null = following the default', properties: { commissionPercent: { type: 'number', nullable: true }, holdDays: { type: 'integer', nullable: true }, payoutMethod: { type: 'string', nullable: true } } },
+  },
+};
+const termsExample = { ...vendorExample, status: 'APPROVED', bankAccountStatus: 'VERIFIED', commissionPercent: 8, holdDays: 2, payoutMethod: 'UPI', custom: { commissionPercent: 8, holdDays: null, payoutMethod: 'UPI' } };
+const termsFields = {
+  commissionPercent: { type: 'number', minimum: 0, maximum: 100, nullable: true },
+  holdDays: { type: 'integer', minimum: 0, maximum: 60, nullable: true },
+  payoutMethod: { type: 'string', enum: METHODS, nullable: true },
+};
 
 module.exports = {
   tags: [
@@ -167,6 +210,13 @@ module.exports = {
         'The vendor\'s money. Completing a job adds its amount to the wallet as an earning. It is **on hold** for 2 days, then **ready**, ' +
         'and is **paid** when the team sends it to the vendor\'s bank account — which shows as a payout transaction.\n\n' +
         'If the customer paid the vendor in cash, the vendor already has the money: that earning shows as `SETTLED_IN_CASH` and is not part of the balance.',
+    },
+    {
+      name: TERMS,
+      description:
+        'How vendors are paid: the platform default for every vendor (hold period, commission, payout method and payout schedule) and ' +
+        'each vendor\'s own commission, hold period and method, which win over the default. Changes apply to jobs completed from then on; ' +
+        'earnings already in a wallet keep the terms they were credited with.',
     },
     {
       name: PAYOUTS,
@@ -306,6 +356,63 @@ module.exports = {
       }),
     },
 
+    '/payouts/settings': {
+      get: op({
+        tag: TERMS,
+        summary: 'Payout defaults for every vendor',
+        description: 'Until a super admin saves settings, the server\'s environment provides them (hold 2 days, no commission, bank transfer, paid as soon as the hold ends).',
+        access: 'ADMIN',
+        responses: { 200: ok('The settings', settingsSchema, settingsExample) },
+      }),
+      put: op({
+        tag: TERMS,
+        summary: 'Change the payout defaults',
+        description:
+          'Send only what changes. A `WEEKLY`, `BIWEEKLY` or `MONTHLY` schedule needs `firstPayoutDate`; later payout days repeat from it ' +
+          '(monthly on the same day of the month). Vendors with their own terms keep them.',
+        access: 'SUPER_ADMIN',
+        body: jsonBody(
+          { type: 'object', minProperties: 1, properties: { holdDays: termsFields.holdDays, commissionPercent: termsFields.commissionPercent, payoutMethod: { type: 'string', enum: METHODS }, frequency: { type: 'string', enum: FREQUENCIES }, firstPayoutDate: { type: 'string', format: 'date', nullable: true } } },
+          { commissionPercent: 10, frequency: 'WEEKLY', firstPayoutDate: '2026-10-20' },
+        ),
+        responses: { 200: ok('The saved settings', settingsSchema, settingsExample) },
+      }),
+    },
+    '/payouts/vendor-terms': {
+      get: op({
+        tag: TERMS,
+        summary: 'Every vendor\'s payout terms',
+        description: 'The commission, hold period and method in effect for each vendor, and which of them are the vendor\'s own (`custom`). By name.',
+        access: 'ADMIN',
+        params: [queryParam('search', 'Vendor name, phone or email'), queryParam('customOnly', 'Only vendors with terms of their own', { type: 'string', enum: ['true', 'false'] }), ...pageParams],
+        responses: { 200: paginated('A page of vendors', termsSchema) },
+      }),
+      put: op({
+        tag: TERMS,
+        summary: 'Set terms for several vendors, or all',
+        description:
+          'Applies the same commission, hold period and/or method to the vendors in `professionalIds`, or to **every** vendor when it is left out. ' +
+          '`null` on a field, or `reset: true`, puts them back on the platform default.',
+        access: 'SUPER_ADMIN',
+        body: jsonBody(
+          { type: 'object', properties: { professionalIds: arrayOf(uuid), reset: { type: 'boolean' }, ...termsFields } },
+          { professionalIds: [examples.APPLICATION_ID], commissionPercent: 8 },
+        ),
+        responses: { 200: ok('How many vendors changed', { type: 'object', properties: { updated: { type: 'integer' } } }, { updated: 1 }) },
+      }),
+    },
+    '/payouts/vendors/{professionalId}/terms': {
+      put: op({
+        tag: TERMS,
+        summary: 'Set one vendor\'s payout terms',
+        description: 'Send only what changes; `null` puts that field back on the platform default.',
+        access: 'SUPER_ADMIN',
+        params: [professionalId],
+        body: jsonBody({ type: 'object', minProperties: 1, properties: termsFields }, { commissionPercent: 8, payoutMethod: 'UPI' }),
+        responses: { 200: ok('The vendor\'s terms', termsSchema, termsExample) },
+        errors: [404],
+      }),
+    },
     '/payouts/due': {
       get: op({
         tag: PAYOUTS,
@@ -326,9 +433,10 @@ module.exports = {
                 pendingEarnings: { type: 'integer' },
                 readySince: { ...dateTime, nullable: true },
                 bankAccountStatus: { type: 'string', description: 'Whether the vendor\'s bank details are verified — check before sending money' },
+                payoutMethod: { type: 'string', enum: METHODS },
               },
             },
-            { totals: { type: 'object', properties: { vendors: { type: 'integer' }, balance: amount(), readyForPayout: amount() } } },
+            { nextPayoutDate: { type: 'string', format: 'date', nullable: true }, totals: { type: 'object', properties: { vendors: { type: 'integer' }, balance: amount(), readyForPayout: amount() } } },
           ),
         },
       }),
@@ -361,7 +469,7 @@ module.exports = {
         access: 'SUPER_ADMIN',
         params: [professionalId],
         body: jsonBody(
-          { type: 'object', required: ['reference'], properties: { reference: { type: 'string', minLength: 3, maxLength: 200, description: 'Bank / UPI transaction reference' }, note: { type: 'string', maxLength: 500 } } },
+          { type: 'object', required: ['reference'], properties: { reference: { type: 'string', minLength: 3, maxLength: 200, description: 'Bank / UPI transaction reference' }, method: { type: 'string', enum: METHODS, description: 'How it was sent; defaults to the vendor\'s payout method' }, note: { type: 'string', maxLength: 500 } } },
           { reference: payoutRef.reference },
         ),
         responses: { 201: ok('The payout', payout, payoutExample) },

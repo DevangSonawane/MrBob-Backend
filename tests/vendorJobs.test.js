@@ -352,3 +352,95 @@ describe('Vendor sign-in for the web dashboard', () => {
     expect(await prisma.user.findUnique({ where: { phone: strangerPhone } })).toBeNull();
   });
 });
+
+describe('Payout settings', () => {
+  const tag = `${Date.now().toString(36)}d`;
+  const made = { users: [], categories: [] };
+  let admin;
+  let superAdmin;
+  let vendor;
+  let other;
+  let customer;
+  let category;
+
+  const make = async (role, label) => {
+    const user = await prisma.user.create({ data: { name: `${label} ${tag}`, email: `${label}-${tag}@example.com`, role } });
+    made.users.push(user.id);
+    return { ...user, auth: { Authorization: `Bearer ${issueTokenPair(user).accessToken}` } };
+  };
+  const makeVendor = async (label) => {
+    const user = await make('PROFESSIONAL', label);
+    user.professionalId = (await prisma.professional.create({ data: { userId: user.id, categories: [], onboardingStatus: 'APPROVED', kycStatus: 'VERIFIED' } })).id;
+    return user;
+  };
+  const call = (who, method, path, body) => request(app)[method](`${API}${path}`).set(who.auth).send(body);
+
+  beforeAll(async () => {
+    await prisma.payoutSettings.deleteMany();
+    admin = await make('ADMIN', 'ps-admin');
+    superAdmin = await make('SUPER_ADMIN', 'ps-super');
+    customer = await make('CUSTOMER', 'ps-customer');
+    vendor = await makeVendor('ps-vendor');
+    other = await makeVendor('ps-other');
+    category = await prisma.serviceCategory.create({ data: { name: `Terms Service ${tag}`, tier: 'REPAIR', basePrice: 1000 } });
+    made.categories.push(category.id);
+  });
+
+  afterAll(async () => {
+    // Leave the defaults as the other suites expect them.
+    await prisma.payoutSettings.deleteMany();
+    const professionals = [vendor.professionalId, other.professionalId];
+    await prisma.walletEntry.deleteMany({ where: { professionalId: { in: professionals } } });
+    await prisma.vendorPayout.deleteMany({ where: { professionalId: { in: professionals } } });
+    await prisma.booking.deleteMany({ where: { categoryId: { in: made.categories } } });
+    await prisma.professional.deleteMany({ where: { id: { in: professionals } } });
+    await prisma.serviceCategory.deleteMany({ where: { id: { in: made.categories } } });
+    await prisma.user.deleteMany({ where: { id: { in: made.users } } });
+  });
+
+  it('starts from the server defaults and lets only a super admin change them', async () => {
+    const start = await call(admin, 'get', '/payouts/settings');
+    expect(start.body.data).toMatchObject({ holdDays: 2, commissionPercent: 0, payoutMethod: 'BANK_TRANSFER', frequency: 'AFTER_HOLD', upcomingPayoutDates: [] });
+    expect((await call(admin, 'put', '/payouts/settings', { commissionPercent: 5 })).status).toBe(403);
+    expect((await call(superAdmin, 'put', '/payouts/settings', { frequency: 'WEEKLY' })).status).toBe(400); // needs a first payout date
+
+    const first = new Date(Date.now() - 3 * DAY).toISOString().slice(0, 10);
+    const saved = await call(superAdmin, 'put', '/payouts/settings', { commissionPercent: 10, payoutMethod: 'UPI', frequency: 'WEEKLY', firstPayoutDate: first });
+    expect(saved.status).toBe(200);
+    expect(saved.body.data).toMatchObject({ commissionPercent: 10, payoutMethod: 'UPI', frequency: 'WEEKLY', firstPayoutDate: first });
+    const [next, after] = saved.body.data.upcomingPayoutDates;
+    expect(next >= new Date().toISOString().slice(0, 10)).toBe(true);
+    expect((new Date(after) - new Date(next)) / DAY).toBe(7);
+  });
+
+  it('gives one vendor their own terms, and applies or resets terms for several at once', async () => {
+    expect((await call(admin, 'put', `/payouts/vendors/${vendor.professionalId}/terms`, { commissionPercent: 20 })).status).toBe(403);
+    const own = await call(superAdmin, 'put', `/payouts/vendors/${vendor.professionalId}/terms`, { commissionPercent: 20, holdDays: 0 });
+    expect(own.body.data).toMatchObject({ commissionPercent: 20, holdDays: 0, payoutMethod: 'UPI', custom: { commissionPercent: 20, holdDays: 0, payoutMethod: null } });
+
+    const many = await call(superAdmin, 'put', '/payouts/vendor-terms', { professionalIds: [vendor.professionalId, other.professionalId], payoutMethod: 'CASH' });
+    expect(many.body.data).toEqual({ updated: 2 });
+    const list = await call(admin, 'get', `/payouts/vendor-terms?search=${encodeURIComponent(tag)}`);
+    expect(list.body.items.map((row) => `${row.name.split(' ')[0]}:${row.commissionPercent}:${row.payoutMethod}`).sort()).toEqual(['ps-other:10:CASH', 'ps-vendor:20:CASH']);
+
+    await call(superAdmin, 'put', '/payouts/vendor-terms', { professionalIds: [other.professionalId], reset: true });
+    const custom = await call(admin, 'get', `/payouts/vendor-terms?customOnly=true&search=${encodeURIComponent(tag)}`);
+    expect(custom.body.items.map((row) => row.professionalId)).toEqual([vendor.professionalId]);
+  });
+
+  it('credits a completed job on the vendor\'s own terms and pays out by their method', async () => {
+    const booking = await prisma.booking.create({ data: { customerId: customer.id, professionalId: vendor.professionalId, categoryId: category.id, status: 'ASSIGNED', address: '1 Terms Road', price: 1000, description: 'Terms test job' } });
+    await call(admin, 'patch', `/bookings/${booking.id}/status`, { status: 'IN_PROGRESS' });
+    await call(admin, 'patch', `/bookings/${booking.id}/status`, { status: 'COMPLETED' });
+
+    const wallet = (await call(admin, 'get', `/payouts/vendors/${vendor.professionalId}`)).body.data.wallet;
+    // 20% commission, no hold: ready at once.
+    expect(wallet).toMatchObject({ balance: 800, readyForPayout: 800, commissionPercent: 20, holdDays: 0, payoutMethod: 'CASH', payoutFrequency: 'WEEKLY' });
+    expect(wallet.nextPayoutDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const entry = (await call(admin, 'get', `/payouts/vendors/${vendor.professionalId}/transactions`)).body.items[0];
+    expect(entry).toMatchObject({ grossAmount: 1000, commission: 200, amount: 800 });
+
+    const payout = await call(superAdmin, 'post', `/payouts/vendors/${vendor.professionalId}`, { reference: 'CASH-HANDOVER-1' });
+    expect(payout.body.data).toMatchObject({ amount: 800, method: 'CASH' });
+  });
+});
