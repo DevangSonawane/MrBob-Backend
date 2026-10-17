@@ -48,6 +48,8 @@ router.get('/applications', authenticate, authorize('ADMIN'), validate(schema.li
 router.get('/applications/summary', authenticate, authorize('ADMIN'), controller.getSummary);
 
 router.get('/applications/:id', authenticate, authorize('ADMIN'), validate(schema.applicationParams), controller.getApplication);
+// Editing a vendor's profile is a super admin decision, like editing any account.
+router.patch('/applications/:id', authenticate, authorize('SUPER_ADMIN'), validate(schema.updateApplication), controller.updateApplication);
 
 router.get(
   '/applications/:id/profile-photo',

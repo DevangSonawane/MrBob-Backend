@@ -377,6 +377,46 @@ module.exports = {
         responses: { 200: ok('The application', adminApplication, underReview) },
         errors: [404],
       }),
+      patch: op({
+        tag: SUPER_ADMIN,
+        summary: 'Edit a vendor\'s profile',
+        description:
+          'Works at any stage, including after approval. Send only what changes; `null` or an empty string clears a field (name, email and ' +
+          'phone can only be replaced). `categories` replaces the whole list of services. Changing the city without `homeZoneId` clears the ' +
+          'zone. Documents and bank details are changed on their own endpoints.\n\n' +
+          'Returns **400** for an unknown city, a zone outside the city or an unknown service; **409** if the phone or email belongs to ' +
+          'another account.',
+        access: 'SUPER_ADMIN',
+        params: [applicationId],
+        body: jsonBody(
+          {
+            type: 'object',
+            minProperties: 1,
+            properties: {
+              name: { type: 'string', maxLength: 100 },
+              phone: { type: 'string', example: '+919812345678' },
+              email: { type: 'string', format: 'email' },
+              gender: { type: 'string', enum: ['MALE', 'FEMALE', 'OTHER'], nullable: true },
+              dateOfBirth: { type: 'string', format: 'date', nullable: true },
+              alternatePhone: { type: 'string', nullable: true },
+              addressLine1: { type: 'string', nullable: true },
+              addressLine2: { type: 'string', nullable: true },
+              landmark: { type: 'string', nullable: true },
+              pincode: { type: 'string', nullable: true },
+              state: { type: 'string', nullable: true },
+              cityId: { type: 'string', format: 'uuid', nullable: true },
+              homeZoneId: { type: 'string', format: 'uuid', nullable: true },
+              emergencyContactName: { type: 'string', nullable: true },
+              emergencyContactPhone: { type: 'string', nullable: true },
+              experienceYears: { type: 'integer', minimum: 0, maximum: 60, nullable: true },
+              categories: { type: 'array', items: { type: 'string', format: 'uuid' }, maxItems: 20 },
+            },
+          },
+          { name: 'Ravi Kumar', experienceYears: 7, categories: ['3f2e1d0c-2222-4b3a-8c7d-6e5f4a3b2c1d'] },
+        ),
+        responses: { 200: ok('The updated application', adminApplication, underReview) },
+        errors: [404, 409],
+      }),
     },
 
     '/vendor-onboarding/applications/{id}/profile-photo': {

@@ -169,7 +169,7 @@ const settingsSchema = {
     upcomingPayoutDates: { type: 'array', items: { type: 'string', format: 'date' }, description: 'The next three scheduled payout days (read only)' },
     automaticPayouts: { type: 'boolean', description: 'Send ready earnings through the payout provider on each payout day, without anyone pressing a button' },
     lastAutomaticRunOn: { type: 'string', format: 'date', nullable: true },
-    provider: { type: 'string', enum: ['LIVE', 'SIMULATED', 'NOT_CONFIGURED'], description: '`LIVE` RazorpayX keys are set and money really moves · `SIMULATED` development stand-in · `NOT_CONFIGURED` only manual payouts work (read only)' },
+    provider: { type: 'string', enum: ['LIVE', 'SIMULATED'], description: '`LIVE` RazorpayX keys are set and money really moves · `SIMULATED` no provider yet: payouts complete in the system but no money moves (read only)' },
     updatedAt: { type: 'string', format: 'date-time', nullable: true },
   },
 };
@@ -399,7 +399,7 @@ module.exports = {
           '(monthly on the same day of the month). Vendors with their own terms keep them.',
         access: 'SUPER_ADMIN',
         body: jsonBody(
-          { type: 'object', minProperties: 1, properties: { holdMinutes: termsFields.holdMinutes, commissionPercent: termsFields.commissionPercent, payoutMethod: { type: 'string', enum: METHODS }, frequency: { type: 'string', enum: FREQUENCIES }, firstPayoutDate: { type: 'string', format: 'date', nullable: true }, automaticPayouts: { type: 'boolean', description: 'Needs the payout provider; **503** without it' } } },
+          { type: 'object', minProperties: 1, properties: { holdMinutes: termsFields.holdMinutes, commissionPercent: termsFields.commissionPercent, payoutMethod: { type: 'string', enum: METHODS }, frequency: { type: 'string', enum: FREQUENCIES }, firstPayoutDate: { type: 'string', format: 'date', nullable: true }, automaticPayouts: { type: 'boolean', description: 'Simulated until a payout provider is connected' } } },
           { commissionPercent: 10, frequency: 'WEEKLY', firstPayoutDate: '2026-10-20', automaticPayouts: true },
         ),
         responses: { 200: ok('The saved settings', settingsSchema, settingsExample) },
@@ -448,7 +448,8 @@ module.exports = {
           'Sends everything the vendor has ready (or everything owed, with `includeOnHold`) through the payout provider, to their bank account ' +
           '(IMPS) or UPI id. Needs verified bank details or a UPI id, otherwise **400**; cash cannot be sent this way. Returns the payout: ' +
           '`PAID`, `PROCESSING` (the provider confirms later and the status updates itself) or `FAILED` with `failureReason`, in which case the ' +
-          'earnings are owed again. **409** if nothing is owed; **503** in production without a payout provider.',
+          'earnings are owed again. **409** if nothing is owed. Until RazorpayX keys are set the payout is simulated: it completes at once and ' +
+          'is marked as simulated, but no money moves.',
         access: 'SUPER_ADMIN',
         params: [professionalId],
         body: jsonBody(
@@ -456,7 +457,7 @@ module.exports = {
           {},
         ),
         responses: { 201: ok('The payout', payout, { ...payoutExample, mode: 'AUTOMATIC', status: 'PROCESSING', reference: 'pout_00000000000001', providerPayoutId: 'pout_00000000000001', processedAt: null }) },
-        errors: [404, 409, 503],
+        errors: [404, 409],
       }),
     },
     '/payouts/run-automatic': {

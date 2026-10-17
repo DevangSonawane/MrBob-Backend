@@ -10,9 +10,7 @@ const text = (max) => z.string().trim().max(max).nullable().optional();
 const nonEmpty = (schema) => schema.refine((data) => Object.keys(data).length > 0, { message: 'No fields to update' });
 
 // Everything is optional: send only what changes; null (or '') clears a field.
-const updateVendorProfile = {
-  body: nonEmpty(
-    z.object({
+const vendorProfileFields = {
       name: z.string().trim().min(1).max(100).optional(),
       email: z.email().optional(),
       gender: z.enum(['MALE', 'FEMALE', 'OTHER']).nullable().optional(),
@@ -29,8 +27,8 @@ const updateVendorProfile = {
       emergencyContactPhone: text(20),
       experienceYears: z.coerce.number().int().min(0).max(60).nullable().optional(),
       categories: z.array(z.uuid()).max(20).optional(),
-    }),
-  ),
 };
 
-module.exports = { updateVendorProfile };
+const updateVendorProfile = { body: nonEmpty(z.object(vendorProfileFields)) };
+
+module.exports = { updateVendorProfile, vendorProfileFields, nonEmpty };

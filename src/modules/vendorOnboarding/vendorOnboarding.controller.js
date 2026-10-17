@@ -56,6 +56,8 @@ const getSummary = catchAsync(async (req, res) => ok(res, await service.getSumma
 
 const getApplication = catchAsync(async (req, res) => ok(res, await service.getApplication(req.params.id)));
 
+const updateApplication = catchAsync(async (req, res) => ok(res, await service.updateApplication(req.params.id, req.body)));
+
 const getApplicationDocumentFile = catchAsync(async (req, res, next) =>
   sendFile(res, next, await service.getApplicationDocumentFile(req.params.id, req.params.type, req.params.side)),
 );
@@ -94,6 +96,7 @@ module.exports = {
   listApplications,
   getSummary,
   getApplication,
+  updateApplication,
   getApplicationDocumentFile,
   getApplicationProfilePhoto,
   reopen,

@@ -4,12 +4,13 @@ const logger = require('../../config/logger');
 const ApiError = require('../../utils/ApiError');
 
 // Sends money to vendors through RazorpayX Payouts. With RAZORPAYX_* set it
-// makes real transfers; without them, development and tests get a stand-in
-// that "pays" at once, and production refuses (only manual payouts work).
+// makes real transfers. Without them (for now, everywhere) a stand-in
+// completes each payout at once so the whole flow works end to end — but no
+// money moves: the team transfers it themselves.
 
 const BASE_URL = 'https://api.razorpay.com/v1';
 const isConfigured = Boolean(env.RAZORPAYX_KEY_ID && env.RAZORPAYX_KEY_SECRET && env.RAZORPAYX_ACCOUNT_NUMBER);
-const isSimulated = !isConfigured && env.NODE_ENV !== 'production';
+const isSimulated = !isConfigured;
 
 // The provider's payout states, folded into ours.
 const STATUS = { processed: 'PAID', queued: 'PROCESSING', pending: 'PROCESSING', processing: 'PROCESSING', scheduled: 'PROCESSING' };
@@ -54,7 +55,7 @@ const ensureDestination = async ({ vendor, method, destination, ids }) => {
 const send = async ({ vendor, method, destination, ids, amount, referenceId, narration }) => {
   if (isSimulated) {
     logger.info({ referenceId, amount }, 'Payout provider not configured — simulating a successful payout');
-    return { providerPayoutId: `sim_payout_${crypto.randomUUID()}`, status: 'PAID', ids: {} };
+    return { providerPayoutId: `sim_payout_${crypto.randomUUID()}`, status: 'PAID', ids: {}, simulated: true };
   }
   if (!isConfigured) throw new ApiError(503, 'Automatic payouts are not set up on this server. Record the transfer manually instead.');
 

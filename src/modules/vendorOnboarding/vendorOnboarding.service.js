@@ -924,6 +924,20 @@ const getSummary = async () => {
   };
 };
 
+// The team edits a vendor's profile: everything the vendor can edit
+// themselves, plus their phone number. Documents and bank details have their
+// own screens. Works at any stage.
+const updateApplication = async (id, { phone, ...body }) => {
+  const application = await loadById(id);
+  if (phone && phone !== application.user.phone) {
+    const taken = await prisma.user.findUnique({ where: { phone } });
+    if (taken) throw ApiError.conflict('This phone number is already linked to another account');
+    await prisma.user.update({ where: { id: application.user.id }, data: { phone } });
+  }
+  if (Object.keys(body).length) await updateMyProfile(application.user.id, body);
+  return getApplication(id);
+};
+
 const getApplication = async (id) => {
   const application = await loadById(id);
   const [view, events, reviewedBy] = await Promise.all([
@@ -1049,6 +1063,7 @@ module.exports = {
   getMyStatus,
   getMyProfile,
   updateMyProfile,
+  updateApplication,
   savePersonalDetails,
   saveServices,
   saveDocument,

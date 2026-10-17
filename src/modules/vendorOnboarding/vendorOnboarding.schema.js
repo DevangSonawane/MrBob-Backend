@@ -3,6 +3,7 @@ const { paginationQuery } = require('../../utils/pagination');
 const { commaList, dateOnly, sortOrder } = require('../../utils/queryFilters');
 const { OTP_LENGTH } = require('../auth/otp.store');
 const { relaxed, looseText, looseNumber, looseList } = require('../../utils/onboardingValidation');
+const { vendorProfileFields, nonEmpty } = require('../account/account.schema');
 
 const phoneSchema = z
   .string()
@@ -142,6 +143,13 @@ const applicationParams = {
   params: z.object({ id: z.uuid() }),
 };
 
+// Everything optional; null (or '') clears a field. Same fields as the
+// vendor's own profile edit, plus the phone number.
+const updateApplication = {
+  params: z.object({ id: z.uuid() }),
+  body: nonEmpty(z.object({ phone: z.string().regex(/^\+[1-9]\d{9,14}$/, 'Use the international format, e.g. +919812345678').optional(), ...vendorProfileFields })),
+};
+
 const applicationDocumentParams = {
   params: z.object({ id: z.uuid(), type: documentTypeParam }),
 };
@@ -230,6 +238,7 @@ module.exports = {
   documentFile,
   listApplications,
   applicationParams,
+  updateApplication,
   applicationDocumentParams,
   applicationDocumentFile,
   rejectDocument,

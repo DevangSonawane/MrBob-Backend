@@ -343,6 +343,8 @@ const sendPayout = async (professionalId, { method, includeOnHold = false, note,
         data: { ...(ids.contactId && { razorpayContactId: ids.contactId }), ...(ids.bankFundAccountId && { razorpayBankFundAccountId: ids.bankFundAccountId }), ...(ids.upiFundAccountId && { razorpayUpiFundAccountId: ids.upiFundAccountId }) },
       });
     }
+    // Marked so the team can tell it apart from a real transfer.
+    if (result.simulated) await prisma.vendorPayout.update({ where: { id: payout.id }, data: { note: [note, 'Simulated — no payout provider is connected, so no money was moved'].filter(Boolean).join(' · ') } });
     return payoutView(await applyProviderResult(payout.id, result));
   } catch (err) {
     return payoutView(await applyProviderResult(payout.id, { status: 'FAILED', failureReason: err.message }));
