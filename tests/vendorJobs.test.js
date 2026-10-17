@@ -400,7 +400,7 @@ describe('Payout settings', () => {
 
   it('starts from the server defaults and lets only a super admin change them', async () => {
     const start = await call(admin, 'get', '/payouts/settings');
-    expect(start.body.data).toMatchObject({ holdDays: 2, commissionPercent: 0, payoutMethod: 'BANK_TRANSFER', frequency: 'AFTER_HOLD', upcomingPayoutDates: [] });
+    expect(start.body.data).toMatchObject({ holdMinutes: 2880, holdLabel: '2 days', commissionPercent: 0, payoutMethod: 'BANK_TRANSFER', frequency: 'AFTER_HOLD', upcomingPayoutDates: [] });
     expect((await call(admin, 'put', '/payouts/settings', { commissionPercent: 5 })).status).toBe(403);
     expect((await call(superAdmin, 'put', '/payouts/settings', { frequency: 'WEEKLY' })).status).toBe(400); // needs a first payout date
 
@@ -413,10 +413,17 @@ describe('Payout settings', () => {
     expect((new Date(after) - new Date(next)) / DAY).toBe(7);
   });
 
+  it('takes the hold period in minutes, so it can be days, hours and minutes', async () => {
+    const saved = await call(superAdmin, 'put', '/payouts/settings', { holdMinutes: 1 * 1440 + 4 * 60 + 30 });
+    expect(saved.body.data).toMatchObject({ holdMinutes: 1710, holdLabel: '1 day 4 hours 30 minutes' });
+    expect((await call(superAdmin, 'put', '/payouts/settings', { holdMinutes: 61 * 1440 })).status).toBe(400);
+    await call(superAdmin, 'put', '/payouts/settings', { holdMinutes: 2880 });
+  });
+
   it('gives one vendor their own terms, and applies or resets terms for several at once', async () => {
     expect((await call(admin, 'put', `/payouts/vendors/${vendor.professionalId}/terms`, { commissionPercent: 20 })).status).toBe(403);
-    const own = await call(superAdmin, 'put', `/payouts/vendors/${vendor.professionalId}/terms`, { commissionPercent: 20, holdDays: 0 });
-    expect(own.body.data).toMatchObject({ commissionPercent: 20, holdDays: 0, payoutMethod: 'UPI', custom: { commissionPercent: 20, holdDays: 0, payoutMethod: null } });
+    const own = await call(superAdmin, 'put', `/payouts/vendors/${vendor.professionalId}/terms`, { commissionPercent: 20, holdMinutes: 0 });
+    expect(own.body.data).toMatchObject({ commissionPercent: 20, holdMinutes: 0, holdLabel: 'No hold', payoutMethod: 'UPI', custom: { commissionPercent: 20, holdMinutes: 0, payoutMethod: null } });
 
     const many = await call(superAdmin, 'put', '/payouts/vendor-terms', { professionalIds: [vendor.professionalId, other.professionalId], payoutMethod: 'CASH' });
     expect(many.body.data).toEqual({ updated: 2 });
@@ -435,12 +442,143 @@ describe('Payout settings', () => {
 
     const wallet = (await call(admin, 'get', `/payouts/vendors/${vendor.professionalId}`)).body.data.wallet;
     // 20% commission, no hold: ready at once.
-    expect(wallet).toMatchObject({ balance: 800, readyForPayout: 800, commissionPercent: 20, holdDays: 0, payoutMethod: 'CASH', payoutFrequency: 'WEEKLY' });
+    expect(wallet).toMatchObject({ balance: 800, readyForPayout: 800, commissionPercent: 20, holdMinutes: 0, holdDays: 0, payoutMethod: 'CASH', payoutFrequency: 'WEEKLY' });
     expect(wallet.nextPayoutDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     const entry = (await call(admin, 'get', `/payouts/vendors/${vendor.professionalId}/transactions`)).body.items[0];
     expect(entry).toMatchObject({ grossAmount: 1000, commission: 200, amount: 800 });
 
     const payout = await call(superAdmin, 'post', `/payouts/vendors/${vendor.professionalId}`, { reference: 'CASH-HANDOVER-1' });
     expect(payout.body.data).toMatchObject({ amount: 800, method: 'CASH' });
+  });
+});
+
+describe('Paying vendors: bank details, send now, automatic run and provider updates', () => {
+  const tag = `${Date.now().toString(36)}e`;
+  const made = { users: [], categories: [] };
+  const crypto = require('crypto');
+  const env = require('../src/config/env');
+  const provider = require('../src/modules/wallet/payoutProvider');
+  let admin;
+  let superAdmin;
+  let customer;
+  let vendor;
+  let category;
+
+  const make = async (role, label) => {
+    const user = await prisma.user.create({ data: { name: `${label} ${tag}`, email: `${label}-${tag}@example.com`, role } });
+    made.users.push(user.id);
+    return { ...user, auth: { Authorization: `Bearer ${issueTokenPair(user).accessToken}` } };
+  };
+  const call = (who, method, path, body) => request(app)[method](`${API}${path}`).set(who.auth).send(body);
+  // A completed job worth `price`, ready to be paid out now.
+  const earn = async (price) => {
+    const booking = await prisma.booking.create({ data: { customerId: customer.id, professionalId: vendor.professionalId, categoryId: category.id, status: 'ASSIGNED', address: '1 Payout Road', price, description: 'Payout test job' } });
+    await call(admin, 'patch', `/bookings/${booking.id}/status`, { status: 'IN_PROGRESS' });
+    await call(admin, 'patch', `/bookings/${booking.id}/status`, { status: 'COMPLETED' });
+    await prisma.walletEntry.updateMany({ where: { bookingId: booking.id }, data: { availableAt: new Date(Date.now() - 1000) } });
+  };
+  const wallet = async () => (await call(admin, 'get', `/payouts/vendors/${vendor.professionalId}`)).body.data.wallet;
+
+  beforeAll(async () => {
+    await prisma.payoutSettings.deleteMany();
+    admin = await make('ADMIN', 'pay-admin');
+    superAdmin = await make('SUPER_ADMIN', 'pay-super');
+    customer = await make('CUSTOMER', 'pay-customer');
+    const user = await make('PROFESSIONAL', 'pay-vendor');
+    vendor = { ...user, professionalId: (await prisma.professional.create({ data: { userId: user.id, categories: [], onboardingStatus: 'APPROVED', kycStatus: 'VERIFIED' } })).id };
+    category = await prisma.serviceCategory.create({ data: { name: `Payout Service ${tag}`, tier: 'REPAIR', basePrice: 500 } });
+    made.categories.push(category.id);
+  });
+
+  afterAll(async () => {
+    await prisma.payoutSettings.deleteMany();
+    await prisma.walletEntry.deleteMany({ where: { professionalId: vendor.professionalId } });
+    await prisma.vendorPayout.deleteMany({ where: { professionalId: vendor.professionalId } });
+    await prisma.booking.deleteMany({ where: { categoryId: { in: made.categories } } });
+    await prisma.professionalDocument.deleteMany({ where: { professionalId: vendor.professionalId } });
+    await prisma.professional.deleteMany({ where: { id: vendor.professionalId } });
+    await prisma.serviceCategory.deleteMany({ where: { id: { in: made.categories } } });
+    await prisma.user.deleteMany({ where: { id: { in: made.users } } });
+  });
+
+  it('cannot send money before the vendor has bank details', async () => {
+    await earn(500);
+    const res = await call(superAdmin, 'post', `/payouts/vendors/${vendor.professionalId}/send`, {});
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain('no bank account');
+    expect((await call(admin, 'post', `/payouts/vendors/${vendor.professionalId}/send`, {})).status).toBe(403);
+  });
+
+  it('lets a super admin add the vendor\'s bank account and UPI id', async () => {
+    expect((await call(admin, 'get', `/payouts/vendors/${vendor.professionalId}/payout-account`)).body.data).toMatchObject({ status: 'NOT_UPLOADED', hasBankAccount: false });
+    const path = `/payouts/vendors/${vendor.professionalId}/payout-account`;
+    expect((await call(admin, 'put', path, { upiId: 'ravi@okhdfc' })).status).toBe(403);
+    expect((await call(superAdmin, 'put', path, { accountNumber: '50100123456789' })).status).toBe(400); // needs the IFSC
+    expect((await call(superAdmin, 'put', path, { ifsc: 'bad' })).status).toBe(400);
+
+    const saved = await call(superAdmin, 'put', path, { accountHolderName: 'Ravi Kumar', accountNumber: '50100 1234 56789', ifsc: 'hdfc0001234', bankName: 'HDFC Bank', accountType: 'SAVINGS', upiId: 'ravi@okhdfc' });
+    expect(saved.status).toBe(200);
+    expect(saved.body.data).toMatchObject({ status: 'VERIFIED', maskedAccountNumber: 'XXXX6789', ifsc: 'HDFC0001234', upiId: 'ravi@okhdfc', hasBankAccount: true, hasUpi: true });
+    expect(JSON.stringify(saved.body.data)).not.toContain('50100123456789');
+  });
+
+  it('sends the vendor\'s money now, and shows it in their transactions', async () => {
+    const sent = await call(superAdmin, 'post', `/payouts/vendors/${vendor.professionalId}/send`, {});
+    expect(sent.status).toBe(201);
+    // No RazorpayX keys in tests: the stand-in provider pays at once.
+    expect(sent.body.data).toMatchObject({ amount: 500, mode: 'AUTOMATIC', status: 'PAID', method: 'BANK_TRANSFER', earningsCovered: 1 });
+    expect(sent.body.data.providerPayoutId).toMatch(/^sim_payout_/);
+    expect(await wallet()).toMatchObject({ balance: 0, totalPaidOut: 500 });
+
+    const payout = (await call(admin, 'get', `/payouts/vendors/${vendor.professionalId}/transactions?type=PAYOUT`)).body.items[0];
+    expect(payout).toMatchObject({ direction: 'DEBIT', status: 'PAID', amount: 500, payout: { mode: 'AUTOMATIC', status: 'PAID' } });
+    expect((await call(superAdmin, 'post', `/payouts/vendors/${vendor.professionalId}/send`, {})).status).toBe(409); // nothing left
+    expect((await call(superAdmin, 'post', `/payouts/vendors/${vendor.professionalId}/send`, { method: 'CASH' })).status).toBe(400);
+  });
+
+  it('puts the money back as owed when the provider fails', async () => {
+    await earn(300);
+    const spy = jest.spyOn(provider, 'send').mockRejectedValueOnce(new Error('Beneficiary bank is down'));
+    const res = await call(superAdmin, 'post', `/payouts/vendors/${vendor.professionalId}/send`, { method: 'UPI' });
+    spy.mockRestore();
+    expect(res.body.data).toMatchObject({ status: 'FAILED', failureReason: 'Beneficiary bank is down', method: 'UPI', earningsCovered: 0 });
+    expect(await wallet()).toMatchObject({ balance: 300, readyForPayout: 300, totalPaidOut: 500 });
+    expect((await call(admin, 'get', `/payouts?professionalId=${vendor.professionalId}`)).body.items.map((item) => item.status)).toEqual(['FAILED', 'PAID']);
+  });
+
+  it('confirms a processing payout from the provider\'s webhook', async () => {
+    const spy = jest.spyOn(provider, 'send').mockResolvedValueOnce({ providerPayoutId: `pout_${tag}`, status: 'PROCESSING', ids: {} });
+    const res = await call(superAdmin, 'post', `/payouts/vendors/${vendor.professionalId}/send`, {});
+    spy.mockRestore();
+    expect(res.body.data).toMatchObject({ status: 'PROCESSING', providerPayoutId: `pout_${tag}` });
+    const processing = (await call(admin, 'get', `/payouts/vendors/${vendor.professionalId}/transactions?type=PAYOUT`)).body.items[0];
+    expect(processing.status).toBe('PROCESSING');
+
+    const body = JSON.stringify({ event: 'payout.processed', payload: { payout: { entity: { id: `pout_${tag}`, status: 'processed' } } } });
+    expect((await request(app).post(`${API}/payouts/webhook`).set('content-type', 'application/json').set('x-razorpay-signature', 'nope').send(body)).status).toBe(400);
+    env.RAZORPAYX_WEBHOOK_SECRET = 'test-webhook-secret';
+    const signature = crypto.createHmac('sha256', env.RAZORPAYX_WEBHOOK_SECRET).update(body).digest('hex');
+    const hook = await request(app).post(`${API}/payouts/webhook`).set('content-type', 'application/json').set('x-razorpay-signature', signature).send(body);
+    delete env.RAZORPAYX_WEBHOOK_SECRET;
+    expect(hook.body.data).toEqual({ handled: true });
+    const payouts = (await call(admin, 'get', `/payouts?professionalId=${vendor.professionalId}`)).body.items;
+    expect(payouts[0]).toMatchObject({ status: 'PAID', amount: 300 });
+    expect(await wallet()).toMatchObject({ balance: 0, totalPaidOut: 800 });
+  });
+
+  it('pays automatically when it is switched on, and lists who it could not pay', async () => {
+    await earn(200);
+    expect((await call(superAdmin, 'put', '/payouts/settings', { automaticPayouts: true })).body.data).toMatchObject({ automaticPayouts: true, provider: 'SIMULATED' });
+    expect((await call(admin, 'post', '/payouts/run-automatic')).status).toBe(403);
+    const run = await call(superAdmin, 'post', '/payouts/run-automatic');
+    expect(run.status).toBe(200);
+    expect(run.body.data.ran).toBe(true);
+    expect(run.body.data.sent).toBeGreaterThanOrEqual(1);
+    expect(await wallet()).toMatchObject({ balance: 0, totalPaidOut: 1000 });
+
+    // A scheduled run outside a payout day does nothing.
+    const wallets = require('../src/modules/wallet/wallet.service');
+    await call(superAdmin, 'put', '/payouts/settings', { frequency: 'MONTHLY', firstPayoutDate: new Date(Date.now() + 5 * DAY).toISOString().slice(0, 10) });
+    expect(await wallets.runAutomaticPayouts()).toEqual({ ran: false, reason: 'Today is not a payout day' });
   });
 });

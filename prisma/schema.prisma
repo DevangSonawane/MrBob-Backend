@@ -137,12 +137,17 @@ model Professional {
   rating     Decimal   @default(0) @db.Decimal(3, 2)
 
   // Payout terms for this vendor; null = the platform default (PayoutSettings).
-  commissionPercent Decimal?      @db.Decimal(5, 2)
-  payoutHoldDays    Int?
-  payoutMethod      PayoutMethod?
-  homeZoneId        String?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  commissionPercent         Decimal?      @db.Decimal(5, 2)
+  payoutHoldMinutes         Int?
+  payoutMethod              PayoutMethod?
+  // The vendor as a contact and payout destinations in RazorpayX, created on
+  // the first automatic payout; cleared when the bank account or UPI id changes.
+  razorpayContactId         String?
+  razorpayBankFundAccountId String?
+  razorpayUpiFundAccountId  String?
+  homeZoneId                String?
+  createdAt                 DateTime      @default(now())
+  updatedAt                 DateTime      @updatedAt
 
   // Onboarding: personal details (name, phone, email and city live on User)
   onboardingStatus      VendorOnboardingStatus @default(DRAFT)
@@ -708,17 +713,24 @@ model WalletEntry {
 }
 
 model VendorPayout {
-  id             String       @id @default(uuid())
+  id               String       @id @default(uuid())
   // Human-friendly reference shown to vendors and the team as PO-000123.
-  sequence       Int          @unique @default(autoincrement())
-  professionalId String
-  amount         Decimal      @db.Decimal(10, 2)
-  reference      String // the bank / UPI transaction reference
-  method         PayoutMethod @default(BANK_TRANSFER)
-  note           String?
-  paidAt         DateTime     @default(now())
-  createdById    String?
-  createdAt      DateTime     @default(now())
+  sequence         Int          @unique @default(autoincrement())
+  professionalId   String
+  amount           Decimal      @db.Decimal(10, 2)
+  reference        String // the bank / UPI transaction reference
+  method           PayoutMethod @default(BANK_TRANSFER)
+  // MANUAL: the team sent the money and recorded it. AUTOMATIC: sent through
+  // the payout provider (on schedule, or with "Send now").
+  mode             PayoutMode   @default(MANUAL)
+  status           PayoutStatus @default(PAID)
+  providerPayoutId String? // the provider's payout id
+  failureReason    String?
+  processedAt      DateTime?
+  note             String?
+  paidAt           DateTime     @default(now())
+  createdById      String?
+  createdAt        DateTime     @default(now())
 
   professional Professional  @relation(fields: [professionalId], references: [id], onDelete: Cascade)
   entries      WalletEntry[]
@@ -744,16 +756,30 @@ enum PayoutFrequency {
 }
 
 model PayoutSettings {
-  id                Int             @id @default(1)
-  holdDays          Int             @default(2)
-  commissionPercent Decimal         @default(0) @db.Decimal(5, 2)
-  payoutMethod      PayoutMethod    @default(BANK_TRANSFER)
-  frequency         PayoutFrequency @default(AFTER_HOLD)
+  id                 Int             @id @default(1)
+  holdMinutes        Int             @default(2880) // 2 days
+  commissionPercent  Decimal         @default(0) @db.Decimal(5, 2)
+  payoutMethod       PayoutMethod    @default(BANK_TRANSFER)
+  frequency          PayoutFrequency @default(AFTER_HOLD)
   // The first scheduled payout day; later ones repeat from it (weekly, every
   // two weeks, or monthly on the same day of the month).
-  firstPayoutDate   DateTime?       @db.Date
-  updatedById       String?
-  updatedAt         DateTime        @updatedAt
+  firstPayoutDate    DateTime?       @db.Date
+  // Send ready earnings through the payout provider without anyone pressing a button.
+  automaticPayouts   Boolean         @default(false)
+  lastAutomaticRunOn DateTime?       @db.Date
+  updatedById        String?
+  updatedAt          DateTime        @updatedAt
 
   @@map("payout_settings")
+}
+
+enum PayoutMode {
+  MANUAL
+  AUTOMATIC
+}
+
+enum PayoutStatus {
+  PROCESSING // handed to the provider, not confirmed yet
+  PAID
+  FAILED // the provider could not send it; the earnings are owed again
 }

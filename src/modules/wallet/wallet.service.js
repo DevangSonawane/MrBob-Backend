@@ -5,6 +5,8 @@ const notifications = require('../notifications/notifications.service');
 const { toSkipTake, paginatedResponse } = require('../../utils/pagination');
 const { personSearch } = require('../../utils/queryFilters');
 const payoutSettings = require('./payoutSettings.service');
+const payoutAccount = require('./payoutAccount.service');
+const provider = require('./payoutProvider');
 
 // The vendor wallet. Completing a job credits the vendor with an EARNING. It
 // is held for PAYOUT_HOLD_DAYS, then is ready to be sent; the team sends the
@@ -12,7 +14,6 @@ const payoutSettings = require('./payoutSettings.service');
 // earnings it covers as PAID. If the vendor took the customer's cash
 // themselves, the earning is SETTLED_IN_CASH and nothing is owed for it.
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const money = (value) => Math.round(Number(value ?? 0) * 100) / 100;
 const bookingNumber = (sequence) => `BK-${String(sequence).padStart(6, '0')}`;
 const payoutNumber = (sequence) => `PO-${String(sequence).padStart(6, '0')}`;
@@ -24,12 +25,13 @@ const ready = (professionalId, now) => ({ ...unpaid(professionalId), availableAt
 
 const entryInclude = {
   booking: { select: { id: true, sequence: true, completedAt: true, category: { select: { id: true, name: true } } } },
-  payout: { select: { id: true, sequence: true, reference: true, paidAt: true } },
+  payout: { select: { id: true, sequence: true, reference: true, paidAt: true, status: true, mode: true, method: true } },
 };
 
 const toView = (entry, now = new Date()) => {
   const earning = entry.type === 'EARNING';
-  const status = !earning || entry.status !== 'PENDING' ? entry.status : entry.availableAt > now ? 'ON_HOLD' : 'READY';
+  // A payout handed to the provider shows as PROCESSING until it is confirmed.
+  const status = !earning ? (entry.payout?.status === 'PROCESSING' ? 'PROCESSING' : 'PAID') : entry.status !== 'PENDING' ? entry.status : entry.availableAt > now ? 'ON_HOLD' : 'READY';
   return {
     id: entry.id,
     type: entry.type,
@@ -43,7 +45,9 @@ const toView = (entry, now = new Date()) => {
     // ON_HOLD: when it becomes ready to be sent.
     availableAt: earning ? entry.availableAt : null,
     booking: entry.booking ? { id: entry.booking.id, bookingNumber: bookingNumber(entry.booking.sequence), service: entry.booking.category, completedAt: entry.booking.completedAt } : null,
-    payout: entry.payout ? { id: entry.payout.id, payoutNumber: payoutNumber(entry.payout.sequence), reference: entry.payout.reference, paidAt: entry.payout.paidAt } : null,
+    payout: entry.payout
+      ? { id: entry.payout.id, payoutNumber: payoutNumber(entry.payout.sequence), reference: entry.payout.reference, paidAt: entry.payout.paidAt, status: entry.payout.status, mode: entry.payout.mode, method: entry.payout.method }
+      : null,
     note: entry.note,
     createdAt: entry.createdAt,
   };
@@ -68,7 +72,7 @@ const creditForBooking = async (tx, booking) => {
     amount: money(gross - commission),
     grossAmount: gross,
     commission,
-    availableAt: new Date(Date.now() + terms.holdDays * DAY_MS),
+    availableAt: new Date(Date.now() + terms.holdMinutes * 60 * 1000),
     note: tookCash ? 'Paid in cash to the vendor' : null,
   };
   return tx.walletEntry.upsert({ where: { bookingId: booking.id }, update: {}, create: { ...data, bookingId: booking.id } });
@@ -106,7 +110,10 @@ const summarise = async (professionalId) => {
     collectedInCash: cash,
     totalEarned: money(held + readyNow + paidOut + cash),
     jobsPaidFor: jobs,
-    holdDays: terms.holdDays,
+    // How long an earning is held: in minutes, as words, and in days (kept for older app builds).
+    holdMinutes: terms.holdMinutes,
+    holdLabel: terms.holdLabel,
+    holdDays: Math.round((terms.holdMinutes / 1440) * 100) / 100,
     commissionPercent: terms.commissionPercent,
     payoutMethod: terms.payoutMethod,
     payoutFrequency: settings.frequency,
@@ -230,37 +237,185 @@ const payoutView = (payout) => ({
   amount: money(payout.amount),
   reference: payout.reference,
   method: payout.method,
+  mode: payout.mode,
+  status: payout.status,
+  failureReason: payout.failureReason,
+  providerPayoutId: payout.providerPayoutId,
+  processedAt: payout.processedAt,
   note: payout.note,
-  earningsCovered: payout._count.entries - 1, // every entry but the payout's own
+  // Every entry but the payout's own (a failed payout no longer covers any).
+  earningsCovered: Math.max(0, payout._count.entries - 1),
   paidAt: payout.paidAt,
   createdAt: payout.createdAt,
 });
 const payoutInclude = { professional: vendorSummary, _count: { select: { entries: true } } };
 
-// Records that the vendor's ready earnings were sent to their bank account.
-// The transfer itself is made outside this system; `reference` is its id.
-const createPayout = async (professionalId, { reference, note, method }, actor) => {
-  const vendor = await findVendor(professionalId);
-  const payoutMethod = method ?? (await payoutSettings.termsFor(professionalId)).payoutMethod;
+const notifyVendor = (userId, title, body, payoutId) =>
+  notifications
+    .sendPushNotification(userId, { title, body, data: { type: 'PAYOUT', payoutId } })
+    .catch((err) => logger.warn({ err: err.message, userId }, 'Failed to send payout notification'));
+
+const loadPayout = (id) => prisma.vendorPayout.findUnique({ where: { id }, include: payoutInclude });
+
+// Moves the vendor's earnings onto a new payout, all in one transaction:
+// ready ones only, unless includeOnHold. Guarded on PENDING so two payouts at
+// once can never settle the same earnings.
+const settle = async (professionalId, { mode, method, reference, note, actor, includeOnHold }) => {
   const now = new Date();
-
-  const payout = await prisma.$transaction(async (tx) => {
-    const due = await tx.walletEntry.findMany({ where: ready(professionalId, now), select: { id: true, amount: true } });
-    if (due.length === 0) throw ApiError.conflict('This vendor has nothing ready to be paid out yet');
+  return prisma.$transaction(async (tx) => {
+    const due = await tx.walletEntry.findMany({ where: includeOnHold ? unpaid(professionalId) : ready(professionalId, now), select: { id: true, amount: true } });
+    if (due.length === 0) throw ApiError.conflict(includeOnHold ? 'This vendor is not owed anything' : 'This vendor has nothing ready to be paid out yet');
     const amount = money(due.reduce((total, entry) => total + Number(entry.amount), 0));
+    const manual = mode === 'MANUAL';
 
-    const created = await tx.vendorPayout.create({ data: { professionalId, amount, reference, method: payoutMethod, note: note ?? null, createdById: actor.id, paidAt: now } });
-    // Guarded on PENDING so two admins paying at once cannot both settle the same earnings.
+    const created = await tx.vendorPayout.create({
+      data: { professionalId, amount, reference: reference ?? 'pending', method, mode, status: manual ? 'PAID' : 'PROCESSING', note: note ?? null, createdById: actor?.id ?? null, paidAt: now, ...(manual && { processedAt: now }) },
+    });
+    // Until the provider confirms, an automatic payout shows as processing.
+    if (!reference) await tx.vendorPayout.update({ where: { id: created.id }, data: { reference: payoutNumber(created.sequence) } });
     const { count } = await tx.walletEntry.updateMany({ where: { id: { in: due.map((entry) => entry.id) }, status: 'PENDING' }, data: { status: 'PAID', payoutId: created.id } });
     if (count !== due.length) throw ApiError.conflict('These earnings were just paid out by someone else — reload and try again');
-    await tx.walletEntry.create({ data: { professionalId, type: 'PAYOUT', status: 'PAID', amount, payoutId: created.id, note: reference } });
+    await tx.walletEntry.create({ data: { professionalId, type: 'PAYOUT', status: manual ? 'PAID' : 'PENDING', amount, payoutId: created.id, note: reference ?? null } });
     return created;
   });
+};
 
-  notifications
-    .sendPushNotification(vendor.user.id, { title: 'Payout sent', body: `₹${money(payout.amount)} has been sent to your bank account (${payoutNumber(payout.sequence)}).`, data: { type: 'PAYOUT', payoutId: payout.id } })
-    .catch((err) => logger.warn({ err: err.message, userId: vendor.user.id }, 'Failed to send payout notification'));
-  return payoutView(await prisma.vendorPayout.findUnique({ where: { id: payout.id }, include: payoutInclude }));
+// Applies what the provider says happened to a payout.
+const applyProviderResult = async (payoutId, { status, providerPayoutId, failureReason }) => {
+  const payout = await prisma.vendorPayout.findUnique({ where: { id: payoutId }, include: { professional: vendorSummary } });
+  if (!payout || payout.status !== 'PROCESSING') return payout;
+
+  if (status === 'PAID') {
+    const now = new Date();
+    await prisma.$transaction([
+      prisma.vendorPayout.update({ where: { id: payoutId }, data: { status: 'PAID', processedAt: now, paidAt: now, ...(providerPayoutId && { providerPayoutId, reference: providerPayoutId }) } }),
+      prisma.walletEntry.updateMany({ where: { payoutId, type: 'PAYOUT' }, data: { status: 'PAID', ...(providerPayoutId && { note: providerPayoutId }) } }),
+    ]);
+    notifyVendor(payout.professional.user.id, 'Payout sent', `₹${money(payout.amount)} has been sent to you (${payoutNumber(payout.sequence)}).`, payoutId);
+  } else if (status === 'FAILED') {
+    // The money did not go: the earnings are owed again and can be paid later.
+    await prisma.$transaction([
+      prisma.walletEntry.updateMany({ where: { payoutId, type: 'EARNING' }, data: { status: 'PENDING', payoutId: null } }),
+      prisma.walletEntry.deleteMany({ where: { payoutId, type: 'PAYOUT' } }),
+      prisma.vendorPayout.update({ where: { id: payoutId }, data: { status: 'FAILED', failureReason: failureReason || 'The payout provider could not send it', ...(providerPayoutId && { providerPayoutId }) } }),
+    ]);
+    logger.warn({ payoutId, failureReason }, 'Vendor payout failed; earnings are owed again');
+  } else if (providerPayoutId) {
+    await prisma.vendorPayout.update({ where: { id: payoutId }, data: { providerPayoutId } });
+  }
+  return loadPayout(payoutId);
+};
+
+// Checks a vendor can be paid by `method` right now, and returns where to.
+const destinationFor = async (professionalId, method) => {
+  if (method === 'CASH') throw ApiError.badRequest('Cash cannot be sent automatically — hand it over and record it as a manual payout');
+  const destination = await payoutAccount.destinationFor(professionalId);
+  if (method === 'UPI' && !destination.upiId) throw ApiError.badRequest('This vendor has no UPI id — add one first');
+  if (method === 'BANK_TRANSFER' && !(destination.accountNumber && destination.ifsc)) throw ApiError.badRequest('This vendor has no bank account — add one first');
+  if (!destination.verified) throw ApiError.badRequest('This vendor\'s bank details are not verified yet');
+  return destination;
+};
+
+// Sends the vendor's money through the payout provider: from "Send now" in the
+// dashboard (mode AUTOMATIC, by an admin) or from the automatic payout run.
+const sendPayout = async (professionalId, { method, includeOnHold = false, note, actor = null } = {}) => {
+  await findVendor(professionalId);
+  const terms = await payoutSettings.termsFor(professionalId);
+  const payoutMethod = method ?? terms.payoutMethod;
+  const destination = await destinationFor(professionalId, payoutMethod);
+  const payout = await settle(professionalId, { mode: 'AUTOMATIC', method: payoutMethod, note, actor, includeOnHold });
+
+  try {
+    const vendor = await prisma.professional.findUnique({ where: { id: professionalId }, select: { razorpayContactId: true, razorpayBankFundAccountId: true, razorpayUpiFundAccountId: true } });
+    const result = await provider.send({
+      vendor: destination.vendor,
+      method: payoutMethod,
+      destination,
+      ids: { contactId: vendor.razorpayContactId, bankFundAccountId: vendor.razorpayBankFundAccountId, upiFundAccountId: vendor.razorpayUpiFundAccountId },
+      amount: Number(payout.amount),
+      referenceId: payout.id,
+      narration: `Mr Bob ${payoutNumber(payout.sequence)}`,
+    });
+    const ids = result.ids ?? {};
+    if (ids.contactId || ids.bankFundAccountId || ids.upiFundAccountId) {
+      await prisma.professional.update({
+        where: { id: professionalId },
+        data: { ...(ids.contactId && { razorpayContactId: ids.contactId }), ...(ids.bankFundAccountId && { razorpayBankFundAccountId: ids.bankFundAccountId }), ...(ids.upiFundAccountId && { razorpayUpiFundAccountId: ids.upiFundAccountId }) },
+      });
+    }
+    return payoutView(await applyProviderResult(payout.id, result));
+  } catch (err) {
+    return payoutView(await applyProviderResult(payout.id, { status: 'FAILED', failureReason: err.message }));
+  }
+};
+
+// Records a transfer the team made themselves (bank app, UPI app, cash).
+const createPayout = async (professionalId, { reference, note, method, includeOnHold = false }, actor) => {
+  const vendor = await findVendor(professionalId);
+  const payoutMethod = method ?? (await payoutSettings.termsFor(professionalId)).payoutMethod;
+  const payout = await settle(professionalId, { mode: 'MANUAL', method: payoutMethod, reference, note, actor, includeOnHold });
+  notifyVendor(vendor.user.id, 'Payout sent', `₹${money(payout.amount)} has been sent to you (${payoutNumber(payout.sequence)}).`, payout.id);
+  return payoutView(await loadPayout(payout.id));
+};
+
+// Asks the provider about payouts it has not confirmed yet (the webhook
+// usually does this first).
+const refreshProcessing = async () => {
+  const pending = await prisma.vendorPayout.findMany({ where: { status: 'PROCESSING', providerPayoutId: { not: null } }, select: { id: true, providerPayoutId: true }, take: 50 });
+  for (const payout of pending) {
+    try {
+      await applyProviderResult(payout.id, await provider.fetchStatus(payout.providerPayoutId));
+    } catch (err) {
+      logger.warn({ err: err.message, payoutId: payout.id }, 'Could not check a payout with the provider');
+    }
+  }
+  return { checked: pending.length };
+};
+
+// The provider's webhook: payout.processed / payout.failed / payout.reversed / payout.rejected.
+const handleProviderEvent = async (event) => {
+  const entity = event?.payload?.payout?.entity;
+  if (!entity?.id) return { handled: false };
+  const payout = await prisma.vendorPayout.findFirst({ where: { OR: [{ providerPayoutId: entity.id }, { id: entity.reference_id ?? '' }] }, select: { id: true } });
+  if (!payout) return { handled: false };
+  await applyProviderResult(payout.id, { status: provider.toStatus(entity.status), providerPayoutId: entity.id, failureReason: entity.failure_reason ?? entity.status_details?.description });
+  return { handled: true };
+};
+
+// Pays every vendor whose money is ready, when automatic payouts are on and
+// today is a payout day (or every run, on "as soon as the hold ends").
+// `force` runs it now regardless — the dashboard's "Run now".
+const runAutomaticPayouts = async ({ force = false, actor = null } = {}) => {
+  const settings = await payoutSettings.load();
+  const today = payoutSettings.dateOnly(new Date());
+  if (!force) {
+    if (!settings.automaticPayouts) return { ran: false, reason: 'Automatic payouts are off' };
+    if (settings.frequency !== 'AFTER_HOLD') {
+      const nextDay = payoutSettings.upcomingPayoutDates(settings, 1)[0];
+      if (nextDay !== today) return { ran: false, reason: 'Today is not a payout day' };
+      if (payoutSettings.dateOnly(settings.lastAutomaticRunOn) === today) return { ran: false, reason: 'Already run today' };
+    }
+  }
+
+  const groups = await prisma.walletEntry.groupBy({ by: ['professionalId'], where: { type: 'EARNING', status: 'PENDING', availableAt: { lte: new Date() } } });
+  const result = { ran: true, sent: 0, amount: 0, failed: [], skipped: [] };
+  for (const { professionalId } of groups) {
+    const vendor = await prisma.professional.findUnique({ where: { id: professionalId }, select: { user: { select: { name: true, deletedAt: true } } } });
+    if (!vendor || vendor.user.deletedAt) continue;
+    try {
+      const payout = await sendPayout(professionalId, { actor });
+      if (payout.status === 'FAILED') result.failed.push({ professionalId, name: vendor.user.name, reason: payout.failureReason });
+      else {
+        result.sent += 1;
+        result.amount = money(result.amount + payout.amount);
+      }
+    } catch (err) {
+      result.skipped.push({ professionalId, name: vendor.user.name, reason: err.message });
+    }
+  }
+  if (settings.frequency !== 'AFTER_HOLD' && settings.updatedAt) await prisma.payoutSettings.update({ where: { id: 1 }, data: { lastAutomaticRunOn: new Date(`${today}T00:00:00.000Z`) } });
+  logger.info({ ...result, skipped: result.skipped.length, failed: result.failed.length }, 'Automatic payout run');
+  return result;
 };
 
 const listPayouts = async ({ page, limit, professionalId, search }) => {
@@ -286,5 +441,9 @@ module.exports = {
     return listPendingFor(professionalId, query);
   },
   createPayout,
+  sendPayout,
+  refreshProcessing,
+  handleProviderEvent,
+  runAutomaticPayouts,
   listPayouts,
 };

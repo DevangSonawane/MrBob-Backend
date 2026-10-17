@@ -18,6 +18,12 @@ const envSchema = z.object({
 
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
+  // RazorpayX Payouts, for paying vendors automatically. Without these,
+  // production can only record transfers made by hand; development simulates them.
+  RAZORPAYX_KEY_ID: z.string().optional(),
+  RAZORPAYX_KEY_SECRET: z.string().optional(),
+  RAZORPAYX_ACCOUNT_NUMBER: z.string().optional(), // the RazorpayX business account money is sent from
+  RAZORPAYX_WEBHOOK_SECRET: z.string().optional(),
 
   FIREBASE_PROJECT_ID: z.string().optional(),
   FIREBASE_CLIENT_EMAIL: z.string().optional(),

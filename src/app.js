@@ -46,7 +46,7 @@ app.use(pinoHttp({ logger }));
 // so it's excluded from the global JSON parser (it applies its own
 // express.raw() middleware in payments.routes.js).
 app.use((req, res, next) => {
-  if (req.originalUrl === `${env.API_BASE_PATH}/payments/webhook`) return next();
+  if ([`${env.API_BASE_PATH}/payments/webhook`, `${env.API_BASE_PATH}/payouts/webhook`].includes(req.originalUrl)) return next();
   express.json({ limit: '1mb' })(req, res, next);
 });
 app.use(express.urlencoded({ extended: true }));

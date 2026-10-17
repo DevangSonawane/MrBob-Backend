@@ -54,7 +54,7 @@ const availableExample = {
   createdAt: base.createdAt,
 };
 
-const ENTRY_STATUS = ['ON_HOLD', 'READY', 'PAID', 'SETTLED_IN_CASH'];
+const ENTRY_STATUS = ['ON_HOLD', 'READY', 'PROCESSING', 'PAID', 'SETTLED_IN_CASH'];
 const transaction = {
   type: 'object',
   properties: {
@@ -68,11 +68,11 @@ const transaction = {
     status: {
       type: 'string',
       enum: ENTRY_STATUS,
-      description: '`ON_HOLD` earned, waiting out the hold · `READY` hold over, waiting to be sent · `PAID` sent to the bank · `SETTLED_IN_CASH` the vendor took the customer\'s cash, nothing to send',
+      description: '`ON_HOLD` earned, waiting out the hold · `READY` hold over, waiting to be sent · `PROCESSING` (payouts) handed to the payout provider, not confirmed yet · `PAID` sent · `SETTLED_IN_CASH` the vendor took the customer\'s cash, nothing to send',
     },
     availableAt: { ...dateTime, nullable: true, description: 'Earning: when the hold ends' },
     booking: { type: 'object', nullable: true, properties: { id: uuid, bookingNumber: { type: 'string' }, service: { type: 'object' }, completedAt: { ...dateTime, nullable: true } } },
-    payout: { type: 'object', nullable: true, properties: { id: uuid, payoutNumber: { type: 'string', example: 'PO-000007' }, reference: { type: 'string' }, paidAt: dateTime } },
+    payout: { type: 'object', nullable: true, properties: { id: uuid, payoutNumber: { type: 'string', example: 'PO-000007' }, reference: { type: 'string' }, paidAt: dateTime, status: { type: 'string', enum: ['PROCESSING', 'PAID', 'FAILED'] }, mode: { type: 'string', enum: ['MANUAL', 'AUTOMATIC'] }, method: { type: 'string', enum: METHODS } } },
     note: { type: 'string', nullable: true },
     createdAt: dateTime,
   },
@@ -92,7 +92,7 @@ const earningExample = {
   note: null,
   createdAt: '2026-10-09T06:15:00.000Z',
 };
-const payoutRef = { id: 'f0e1d2c3-2222-4b4a-9c8d-7e6f5a4b3c2d', payoutNumber: 'PO-000007', reference: 'NEFT-HDFCN26281234567', paidAt: '2026-10-08T11:00:00.000Z' };
+const payoutRef = { id: 'f0e1d2c3-2222-4b4a-9c8d-7e6f5a4b3c2d', payoutNumber: 'PO-000007', reference: 'NEFT-HDFCN26281234567', paidAt: '2026-10-08T11:00:00.000Z', status: 'PAID', mode: 'MANUAL', method: 'BANK_TRANSFER' };
 const payoutEntryExample = { ...earningExample, id: 'e1a2b3c4-2222-4d5e-8f6a-7b8c9d0e1f2a', type: 'PAYOUT', direction: 'DEBIT', title: 'Payout PO-000007', amount: 1450, grossAmount: null, commission: null, status: 'PAID', availableAt: null, booking: null, payout: payoutRef, note: payoutRef.reference, createdAt: payoutRef.paidAt };
 
 const wallet = {
@@ -106,7 +106,9 @@ const wallet = {
     collectedInCash: amount('Jobs where the vendor took the customer\'s cash directly'),
     totalEarned: amount('All of the above together'),
     jobsPaidFor: { type: 'integer' },
-    holdDays: { type: 'integer', example: 2, description: 'How long an earning is held after the job is completed' },
+    holdMinutes: { type: 'integer', example: 2880, description: 'How long an earning is held after the job is completed, in minutes' },
+    holdLabel: { type: 'string', example: '2 days', description: 'The hold period in words, e.g. "1 day 4 hours"' },
+    holdDays: { type: 'number', example: 2, description: 'The hold period in days (may be fractional); prefer holdMinutes' },
     commissionPercent: { type: 'number', example: 10, description: 'The platform\'s share of each job for this vendor' },
     payoutMethod: { type: 'string', enum: METHODS },
     payoutFrequency: { type: 'string', enum: FREQUENCIES },
@@ -124,6 +126,8 @@ const walletExample = {
   collectedInCash: 349,
   totalEarned: 2696,
   jobsPaidFor: 9,
+  holdMinutes: 2880,
+  holdLabel: '2 days',
   holdDays: 2,
   commissionPercent: 10,
   payoutMethod: 'BANK_TRANSFER',
@@ -149,23 +153,27 @@ const vendorRef = { type: 'object', properties: { professionalId: uuid, userId: 
 const vendorExample = { professionalId: examples.APPLICATION_ID, userId: '9c8b7a6d-5555-4f4e-8d3c-2b1a0f9e8d7c', name: 'Ravi Kumar', phone: '+919812345678' };
 const payout = {
   type: 'object',
-  properties: { id: uuid, payoutNumber: { type: 'string' }, vendor: vendorRef, amount: amount(), reference: { type: 'string' }, method: { type: 'string', enum: METHODS }, note: { type: 'string', nullable: true }, earningsCovered: { type: 'integer' }, paidAt: dateTime, createdAt: dateTime },
+  properties: { id: uuid, payoutNumber: { type: 'string' }, vendor: vendorRef, amount: amount(), reference: { type: 'string', description: 'Transfer reference: the bank / UPI reference, or the provider payout id' }, method: { type: 'string', enum: METHODS }, mode: { type: 'string', enum: ['MANUAL', 'AUTOMATIC'], description: '`MANUAL` = recorded by the team, `AUTOMATIC` = sent through the payout provider' }, status: { type: 'string', enum: ['PROCESSING', 'PAID', 'FAILED'] }, failureReason: { type: 'string', nullable: true }, providerPayoutId: { type: 'string', nullable: true }, processedAt: { type: 'string', format: 'date-time', nullable: true }, note: { type: 'string', nullable: true }, earningsCovered: { type: 'integer' }, paidAt: dateTime, createdAt: dateTime },
 };
-const payoutExample = { id: payoutRef.id, payoutNumber: payoutRef.payoutNumber, vendor: vendorExample, amount: 598, reference: payoutRef.reference, method: 'BANK_TRANSFER', note: null, earningsCovered: 2, paidAt: '2026-10-13T11:00:00.000Z', createdAt: '2026-10-13T11:00:00.000Z' };
+const payoutExample = { id: payoutRef.id, payoutNumber: payoutRef.payoutNumber, vendor: vendorExample, amount: 598, reference: payoutRef.reference, method: 'BANK_TRANSFER', mode: 'MANUAL', status: 'PAID', failureReason: null, providerPayoutId: null, processedAt: '2026-10-13T11:00:00.000Z', note: null, earningsCovered: 2, paidAt: '2026-10-13T11:00:00.000Z', createdAt: '2026-10-13T11:00:00.000Z' };
 
 const settingsSchema = {
   type: 'object',
   properties: {
-    holdDays: { type: 'integer', minimum: 0, maximum: 60, description: 'Days an earning is held after the job is completed' },
+    holdMinutes: { type: 'integer', minimum: 0, maximum: 86400, description: 'How long an earning is held after the job is completed, in minutes (days × 1440 + hours × 60 + minutes); at most 60 days' },
+    holdLabel: { type: 'string', description: 'The hold period in words (read only)' },
     commissionPercent: { type: 'number', minimum: 0, maximum: 100, description: 'The platform\'s share of each job' },
     payoutMethod: { type: 'string', enum: METHODS, description: 'How vendors are paid by default' },
     frequency: { type: 'string', enum: FREQUENCIES, description: '`AFTER_HOLD` pays each earning once its hold ends; the others pay on a schedule' },
     firstPayoutDate: { type: 'string', format: 'date', nullable: true, description: 'The first scheduled payout day; later ones repeat from it' },
     upcomingPayoutDates: { type: 'array', items: { type: 'string', format: 'date' }, description: 'The next three scheduled payout days (read only)' },
+    automaticPayouts: { type: 'boolean', description: 'Send ready earnings through the payout provider on each payout day, without anyone pressing a button' },
+    lastAutomaticRunOn: { type: 'string', format: 'date', nullable: true },
+    provider: { type: 'string', enum: ['LIVE', 'SIMULATED', 'NOT_CONFIGURED'], description: '`LIVE` RazorpayX keys are set and money really moves · `SIMULATED` development stand-in · `NOT_CONFIGURED` only manual payouts work (read only)' },
     updatedAt: { type: 'string', format: 'date-time', nullable: true },
   },
 };
-const settingsExample = { holdDays: 2, commissionPercent: 10, payoutMethod: 'BANK_TRANSFER', frequency: 'WEEKLY', firstPayoutDate: '2026-10-20', upcomingPayoutDates: ['2026-10-20', '2026-10-27', '2026-11-03'], updatedAt: '2026-10-18T09:00:00.000Z' };
+const settingsExample = { holdMinutes: 2880, holdLabel: '2 days', commissionPercent: 10, payoutMethod: 'BANK_TRANSFER', frequency: 'WEEKLY', firstPayoutDate: '2026-10-20', upcomingPayoutDates: ['2026-10-20', '2026-10-27', '2026-11-03'], automaticPayouts: true, lastAutomaticRunOn: '2026-10-13', provider: 'LIVE', updatedAt: '2026-10-18T09:00:00.000Z' };
 const termsSchema = {
   type: 'object',
   properties: {
@@ -173,17 +181,36 @@ const termsSchema = {
     status: { type: 'string', description: 'Vendor onboarding status' },
     bankAccountStatus: { type: 'string' },
     commissionPercent: { type: 'number', description: 'In effect: the vendor\'s own, or the default' },
-    holdDays: { type: 'integer' },
+    holdMinutes: { type: 'integer' },
+    holdLabel: { type: 'string' },
     payoutMethod: { type: 'string', enum: METHODS },
-    custom: { type: 'object', description: 'The vendor\'s own values; null = following the default', properties: { commissionPercent: { type: 'number', nullable: true }, holdDays: { type: 'integer', nullable: true }, payoutMethod: { type: 'string', nullable: true } } },
+    custom: { type: 'object', description: 'The vendor\'s own values; null = following the default', properties: { commissionPercent: { type: 'number', nullable: true }, holdMinutes: { type: 'integer', nullable: true }, payoutMethod: { type: 'string', nullable: true } } },
   },
 };
-const termsExample = { ...vendorExample, status: 'APPROVED', bankAccountStatus: 'VERIFIED', commissionPercent: 8, holdDays: 2, payoutMethod: 'UPI', custom: { commissionPercent: 8, holdDays: null, payoutMethod: 'UPI' } };
+const termsExample = { ...vendorExample, status: 'APPROVED', bankAccountStatus: 'VERIFIED', commissionPercent: 8, holdMinutes: 2880, holdLabel: '2 days', payoutMethod: 'UPI', custom: { commissionPercent: 8, holdMinutes: null, payoutMethod: 'UPI' } };
 const termsFields = {
   commissionPercent: { type: 'number', minimum: 0, maximum: 100, nullable: true },
-  holdDays: { type: 'integer', minimum: 0, maximum: 60, nullable: true },
+  holdMinutes: { type: 'integer', minimum: 0, maximum: 86400, nullable: true, description: 'In minutes' },
   payoutMethod: { type: 'string', enum: METHODS, nullable: true },
 };
+
+const payoutAccount = {
+  type: 'object',
+  properties: {
+    status: { type: 'string', description: '`VERIFIED` once checked (details entered by the team count as checked)' },
+    accountHolderName: { type: 'string', nullable: true },
+    maskedAccountNumber: { type: 'string', nullable: true, example: 'XXXX6789' },
+    ifsc: { type: 'string', nullable: true },
+    bankName: { type: 'string', nullable: true },
+    branchName: { type: 'string', nullable: true },
+    accountType: { type: 'string', enum: ['SAVINGS', 'CURRENT'], nullable: true },
+    upiId: { type: 'string', nullable: true },
+    hasBankAccount: { type: 'boolean' },
+    hasUpi: { type: 'boolean' },
+    updatedAt: { type: 'string', format: 'date-time', nullable: true },
+  },
+};
+const payoutAccountExample = { status: 'VERIFIED', accountHolderName: 'Ravi Kumar', maskedAccountNumber: 'XXXX6789', ifsc: 'HDFC0001234', bankName: 'HDFC Bank', branchName: 'Koramangala', accountType: 'SAVINGS', upiId: 'ravi@hdfcbank', hasBankAccount: true, hasUpi: true, updatedAt: '2026-10-18T10:00:00.000Z' };
 
 module.exports = {
   tags: [
@@ -360,7 +387,7 @@ module.exports = {
       get: op({
         tag: TERMS,
         summary: 'Payout defaults for every vendor',
-        description: 'Until a super admin saves settings, the server\'s environment provides them (hold 2 days, no commission, bank transfer, paid as soon as the hold ends).',
+        description: 'Until a super admin saves settings, the server\'s environment provides them (hold 2 days = 2880 minutes, no commission, bank transfer, paid as soon as the hold ends).',
         access: 'ADMIN',
         responses: { 200: ok('The settings', settingsSchema, settingsExample) },
       }),
@@ -372,8 +399,8 @@ module.exports = {
           '(monthly on the same day of the month). Vendors with their own terms keep them.',
         access: 'SUPER_ADMIN',
         body: jsonBody(
-          { type: 'object', minProperties: 1, properties: { holdDays: termsFields.holdDays, commissionPercent: termsFields.commissionPercent, payoutMethod: { type: 'string', enum: METHODS }, frequency: { type: 'string', enum: FREQUENCIES }, firstPayoutDate: { type: 'string', format: 'date', nullable: true } } },
-          { commissionPercent: 10, frequency: 'WEEKLY', firstPayoutDate: '2026-10-20' },
+          { type: 'object', minProperties: 1, properties: { holdMinutes: termsFields.holdMinutes, commissionPercent: termsFields.commissionPercent, payoutMethod: { type: 'string', enum: METHODS }, frequency: { type: 'string', enum: FREQUENCIES }, firstPayoutDate: { type: 'string', format: 'date', nullable: true }, automaticPayouts: { type: 'boolean', description: 'Needs the payout provider; **503** without it' } } },
+          { commissionPercent: 10, frequency: 'WEEKLY', firstPayoutDate: '2026-10-20', automaticPayouts: true },
         ),
         responses: { 200: ok('The saved settings', settingsSchema, settingsExample) },
       }),
@@ -411,6 +438,102 @@ module.exports = {
         body: jsonBody({ type: 'object', minProperties: 1, properties: termsFields }, { commissionPercent: 8, payoutMethod: 'UPI' }),
         responses: { 200: ok('The vendor\'s terms', termsSchema, termsExample) },
         errors: [404],
+      }),
+    },
+    '/payouts/vendors/{professionalId}/send': {
+      post: op({
+        tag: PAYOUTS,
+        summary: 'Send a vendor\'s money now',
+        description:
+          'Sends everything the vendor has ready (or everything owed, with `includeOnHold`) through the payout provider, to their bank account ' +
+          '(IMPS) or UPI id. Needs verified bank details or a UPI id, otherwise **400**; cash cannot be sent this way. Returns the payout: ' +
+          '`PAID`, `PROCESSING` (the provider confirms later and the status updates itself) or `FAILED` with `failureReason`, in which case the ' +
+          'earnings are owed again. **409** if nothing is owed; **503** in production without a payout provider.',
+        access: 'SUPER_ADMIN',
+        params: [professionalId],
+        body: jsonBody(
+          { type: 'object', properties: { method: { type: 'string', enum: ['BANK_TRANSFER', 'UPI'], description: 'Defaults to the vendor\'s payout method' }, includeOnHold: { type: 'boolean' }, note: { type: 'string', maxLength: 500 } } },
+          {},
+        ),
+        responses: { 201: ok('The payout', payout, { ...payoutExample, mode: 'AUTOMATIC', status: 'PROCESSING', reference: 'pout_00000000000001', providerPayoutId: 'pout_00000000000001', processedAt: null }) },
+        errors: [404, 409, 503],
+      }),
+    },
+    '/payouts/run-automatic': {
+      post: op({
+        tag: PAYOUTS,
+        summary: 'Run the automatic payout now',
+        description:
+          'Pays every vendor whose money is ready, as the scheduled run would — but now, whatever the schedule. Vendors who cannot be paid ' +
+          'automatically (no or unverified bank details, cash method) are listed in `skipped`; provider failures in `failed`. The server also ' +
+          'runs this by itself every 10 minutes when automatic payouts are on and it is a payout day.',
+        access: 'SUPER_ADMIN',
+        responses: {
+          200: ok(
+            'What happened',
+            { type: 'object', properties: { ran: { type: 'boolean' }, sent: { type: 'integer' }, amount: amount(), failed: arrayOf({ type: 'object' }), skipped: arrayOf({ type: 'object', properties: { professionalId: uuid, name: { type: 'string' }, reason: { type: 'string' } } }) } },
+            { ran: true, sent: 3, amount: 2650, failed: [], skipped: [{ professionalId: examples.APPLICATION_ID, name: 'Ravi Kumar', reason: 'This vendor has no bank account — add one first' }] },
+          ),
+        },
+      }),
+    },
+    '/payouts/refresh': {
+      post: op({
+        tag: PAYOUTS,
+        summary: 'Check processing payouts with the provider',
+        description: 'Asks the payout provider about payouts still `PROCESSING` and updates them. The webhook and the 10-minute run normally do this.',
+        access: 'ADMIN',
+        responses: { 200: ok('How many were checked', { type: 'object', properties: { checked: { type: 'integer' } } }, { checked: 2 }) },
+      }),
+    },
+    '/payouts/webhook': {
+      post: op({
+        tag: PAYOUTS,
+        summary: 'RazorpayX payout webhook',
+        description:
+          'Point RazorpayX\'s webhook here for `payout.processed`, `payout.failed`, `payout.reversed` and `payout.rejected`, with ' +
+          '`RAZORPAYX_WEBHOOK_SECRET` as the secret. Signed with `X-Razorpay-Signature`; **400** if the signature is wrong.',
+        access: 'public',
+        body: jsonBody({ type: 'object', properties: { event: { type: 'string' }, payload: { type: 'object' } } }, { event: 'payout.processed', payload: { payout: { entity: { id: 'pout_00000000000001', status: 'processed' } } } }),
+        responses: { 200: ok('Received', { type: 'object', properties: { handled: { type: 'boolean' } } }, { handled: true }) },
+      }),
+    },
+    '/payouts/vendors/{professionalId}/payout-account': {
+      get: op({
+        tag: PAYOUTS,
+        summary: 'A vendor\'s bank account and UPI id',
+        description: 'The account number is only ever shown masked.',
+        access: 'ADMIN',
+        params: [professionalId],
+        responses: { 200: ok('Where the vendor is paid', payoutAccount, payoutAccountExample) },
+        errors: [404],
+      }),
+      put: op({
+        tag: PAYOUTS,
+        summary: 'Add or change a vendor\'s bank account or UPI id',
+        description:
+          'Send only what changes. The account number is needed (with the IFSC) the first time a bank account is added; afterwards leave it out to ' +
+          'keep it. An empty `upiId` removes the UPI id. Details entered here count as verified. **409** if the account belongs to another vendor.',
+        access: 'SUPER_ADMIN',
+        params: [professionalId],
+        body: jsonBody(
+          {
+            type: 'object',
+            minProperties: 1,
+            properties: {
+              accountHolderName: { type: 'string' },
+              accountNumber: { type: 'string', description: '9 to 18 digits' },
+              ifsc: { type: 'string', example: 'HDFC0001234' },
+              bankName: { type: 'string' },
+              branchName: { type: 'string' },
+              accountType: { type: 'string', enum: ['SAVINGS', 'CURRENT'] },
+              upiId: { type: 'string', example: 'ravi@hdfcbank' },
+            },
+          },
+          { accountHolderName: 'Ravi Kumar', accountNumber: '50100123456789', ifsc: 'HDFC0001234', bankName: 'HDFC Bank', accountType: 'SAVINGS', upiId: 'ravi@hdfcbank' },
+        ),
+        responses: { 200: ok('Where the vendor is paid', payoutAccount, payoutAccountExample) },
+        errors: [404, 409],
       }),
     },
     '/payouts/due': {
@@ -469,7 +592,7 @@ module.exports = {
         access: 'SUPER_ADMIN',
         params: [professionalId],
         body: jsonBody(
-          { type: 'object', required: ['reference'], properties: { reference: { type: 'string', minLength: 3, maxLength: 200, description: 'Bank / UPI transaction reference' }, method: { type: 'string', enum: METHODS, description: 'How it was sent; defaults to the vendor\'s payout method' }, note: { type: 'string', maxLength: 500 } } },
+          { type: 'object', required: ['reference'], properties: { reference: { type: 'string', minLength: 3, maxLength: 200, description: 'Bank / UPI transaction reference' }, method: { type: 'string', enum: METHODS, description: 'How it was sent; defaults to the vendor\'s payout method' }, includeOnHold: { type: 'boolean', description: 'Also settle earnings still on hold' }, note: { type: 'string', maxLength: 500 } } },
           { reference: payoutRef.reference },
         ),
         responses: { 201: ok('The payout', payout, payoutExample) },
