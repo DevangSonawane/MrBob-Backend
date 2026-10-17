@@ -280,12 +280,12 @@ module.exports = {
         tag: [ADMIN, SUPER_ADMIN],
         summary: 'Delete a booking',
         description:
-          'Permanently removes the booking with its timeline, payment record and review. Returns **409** while a professional is on the job ' +
-          '(`ASSIGNED` or `IN_PROGRESS`) or while a refund is still owed — complete, cancel or mark it refunded first.',
+          'Permanently removes the booking, in any status, with its timeline, payment record, review and work photos. If the vendor was ' +
+          'already credited for it, that wallet earning is kept so the money owed is not lost.',
         access: 'SUPER_ADMIN',
         params: [bookingId],
         responses: { 200: ok('Deleted', { type: 'object', properties: { deleted: { type: 'boolean', example: true }, bookingNumber: { type: 'string', example: 'BK-000123' } } }) },
-        errors: [404, 409],
+        errors: [404],
       }),
     },
 

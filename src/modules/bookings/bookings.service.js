@@ -9,6 +9,7 @@ const razorpay = require('../payments/razorpay.client');
 const notifications = require('../notifications/notifications.service');
 const logger = require('../../config/logger');
 const wallet = require('../wallet/wallet.service');
+const storage = require('../storage/storage.service');
 
 // The booking flow, as the customer app presents it:
 //
@@ -384,22 +385,18 @@ const getById = async (id, user) => {
 };
 
 // Headline numbers for the admin bookings screen.
-// Permanently removes a booking with its timeline, payment record and review.
-// Not while someone is on the job or a refund is owed: finish or cancel first.
+// Permanently removes a booking in any status, with its timeline, payment
+// record, review and work photos. A vendor's wallet earning for it is kept
+// (no longer linked to the booking), so money already owed is not lost.
 const remove = async (id) => {
-  const booking = await prisma.booking.findUnique({ where: { id }, include: { payment: true } });
+  const booking = await prisma.booking.findUnique({ where: { id }, include: { images: { select: { fileKey: true } } } });
   if (!booking) throw ApiError.notFound('Booking not found');
-  if (['ASSIGNED', 'IN_PROGRESS'].includes(booking.status)) {
-    throw ApiError.conflict('A professional is on this booking. Complete or cancel it before deleting.');
-  }
-  if (booking.payment?.status === 'REFUND_PENDING') {
-    throw ApiError.conflict('A refund is still owed on this booking. Mark it refunded before deleting.');
-  }
   await prisma.$transaction([
     prisma.review.deleteMany({ where: { bookingId: id } }),
     prisma.payment.deleteMany({ where: { bookingId: id } }),
     prisma.booking.delete({ where: { id } }),
   ]);
+  await Promise.all(booking.images.map((image) => storage.remove(image.fileKey).catch(() => {})));
   return { deleted: true, bookingNumber: bookingNumber(booking.sequence) };
 };
 
