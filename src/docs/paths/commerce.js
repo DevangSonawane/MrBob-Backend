@@ -3,6 +3,7 @@ const { ref, ok, paginated, jsonBody, pathParam, queryParam, pageParams, op } = 
 const PAYMENTS = 'Payments';
 const AMC = 'AMC subscriptions';
 const REVIEWS = 'Reviews';
+const ratingStats = { type: 'object', properties: { average: { type: 'number', nullable: true }, count: { type: 'integer' }, distribution: { type: 'object', description: 'How many of each star rating, 5 to 1', additionalProperties: { type: 'integer' } } } };
 const subscriptionId = pathParam('id', 'Subscription id');
 
 module.exports = {
@@ -105,8 +106,8 @@ module.exports = {
     '/reviews': {
       post: op({
         tag: REVIEWS,
-        summary: 'Review a completed booking',
-        description: 'Only the booking\'s customer (otherwise **403**), only once per booking (**409**), and only when it is `COMPLETED` (**400**).',
+        summary: 'Review a completed booking (older endpoint)',
+        description: 'Kept for older app builds; the customer app should use `POST /customer/bookings/{id}/rating`. Rates the vendor of one of the customer\'s completed bookings; sending again changes the rating. **404** for someone else\'s booking, **409** before it is completed.',
         access: 'CUSTOMER',
         body: jsonBody(
           {
@@ -116,37 +117,64 @@ module.exports = {
           },
           { bookingId: '5b0f6c1e-7d6a-4c58-9d3e-2a1f0b9c8d7e', rating: 5, comment: 'Very professional and punctual.' },
         ),
-        responses: { 201: ok('Review created', ref('Review')) },
+        responses: { 201: ok('The rating', ref('Review')) },
         errors: [404, 409],
       }),
       get: op({
         tag: REVIEWS,
-        summary: 'List all reviews',
+        summary: 'List ratings',
+        description:
+          'Both directions: `authorRole=CUSTOMER` for customers rating vendors, `authorRole=PROFESSIONAL` for vendors rating customers. ' +
+          '`summary` gives the average, count and 1-5 spread for the same filters (e.g. one vendor\'s or one customer\'s average).',
         access: 'ADMIN',
-        params: [queryParam('minRating', 'Only reviews with at least this rating', { type: 'integer', minimum: 1, maximum: 5 }), ...pageParams],
+        params: [
+          queryParam('authorRole', 'Who gave the rating', { type: 'string', enum: ['CUSTOMER', 'PROFESSIONAL'] }),
+          queryParam('rating', 'Exactly this many stars', { type: 'integer', minimum: 1, maximum: 5 }),
+          queryParam('maxRating', 'At most this many stars (e.g. 2 for poor ratings)', { type: 'integer', minimum: 1, maximum: 5 }),
+          queryParam('professionalId', 'Ratings on this vendor\'s bookings', { type: 'string', format: 'uuid' }),
+          queryParam('customerId', 'Ratings on this customer\'s bookings', { type: 'string', format: 'uuid' }),
+          queryParam('search', 'A booking number (BK-000123), or a customer or vendor name / phone'),
+          queryParam('createdFrom', 'Rated on or after (YYYY-MM-DD)', { type: 'string', format: 'date' }),
+          queryParam('createdTo', 'Rated on or before (YYYY-MM-DD)', { type: 'string', format: 'date' }),
+          queryParam('sortBy', 'Sort field', { type: 'string', enum: ['createdAt', 'rating'], default: 'createdAt' }),
+          queryParam('sortOrder', 'Sort direction', { type: 'string', enum: ['asc', 'desc'], default: 'desc' }),
+          ...pageParams,
+        ],
         responses: {
-          200: paginated('A page of reviews, newest first', {
-            allOf: [
-              ref('Review'),
-              {
-                type: 'object',
-                properties: {
-                  user: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, name: { type: 'string' } } },
-                  booking: {
-                    type: 'object',
-                    properties: {
-                      id: { type: 'string', format: 'uuid' },
-                      professional: {
-                        type: 'object',
-                        nullable: true,
-                        properties: { id: { type: 'string', format: 'uuid' }, user: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, name: { type: 'string' } } } },
-                      },
-                    },
-                  },
-                },
+          200: (() => {
+            const party = { type: 'object', properties: { type: { type: 'string', enum: ['CUSTOMER', 'VENDOR'] }, id: { type: 'string', format: 'uuid' }, name: { type: 'string' }, phone: { type: 'string', nullable: true } } };
+            const response = paginated('A page of ratings', {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                authorRole: { type: 'string', enum: ['CUSTOMER', 'PROFESSIONAL'] },
+                rating: { type: 'integer' },
+                comment: { type: 'string', nullable: true },
+                from: party,
+                about: party,
+                booking: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, bookingNumber: { type: 'string' }, service: { type: 'object' }, completedAt: { type: 'string', format: 'date-time', nullable: true } } },
+                createdAt: { type: 'string', format: 'date-time' },
+                updatedAt: { type: 'string', format: 'date-time' },
               },
-            ],
-          }),
+            });
+            response.content['application/json'].schema.properties.summary = ratingStats;
+            return response;
+          })(),
+        },
+      }),
+    },
+    '/reviews/summary': {
+      get: op({
+        tag: REVIEWS,
+        summary: 'Rating headlines',
+        description: 'How vendors are rated by customers, how customers are rated by vendors, and how many completed bookings each side has not rated yet.',
+        access: 'ADMIN',
+        responses: {
+          200: ok(
+            'The summary',
+            { type: 'object', properties: { vendorRatings: ratingStats, customerRatings: ratingStats, completedBookings: { type: 'integer' }, awaitingCustomerRating: { type: 'integer' }, awaitingVendorRating: { type: 'integer' } } },
+            { vendorRatings: { average: 4.6, count: 120, distribution: { 5: 90, 4: 20, 3: 6, 2: 3, 1: 1 } }, customerRatings: { average: 4.8, count: 98, distribution: { 5: 85, 4: 10, 3: 2, 2: 1, 1: 0 } }, completedBookings: 140, awaitingCustomerRating: 20, awaitingVendorRating: 42 },
+          ),
         },
       }),
     },
@@ -154,6 +182,7 @@ module.exports = {
       get: op({
         tag: REVIEWS,
         summary: 'List a professional\'s reviews',
+        description: 'What customers said about this vendor (ratings vendors gave customers are not included).',
         access: 'public',
         params: [pathParam('professionalId', 'Professional id'), ...pageParams],
         responses: {

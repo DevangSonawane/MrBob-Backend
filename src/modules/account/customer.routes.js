@@ -5,6 +5,8 @@ const users = require('../users/users.controller');
 const usersSchema = require('../users/users.schema');
 const bookings = require('../bookings/bookings.controller');
 const bookingsSchema = require('../bookings/bookings.schema');
+const reviews = require('../reviews/reviews.controller');
+const reviewsSchema = require('../reviews/reviews.schema');
 const { addOwnRoutes: addDisputeRoutes } = require('../disputes/disputes.routes');
 const { addCustomerRoutes: addInvoiceRoutes } = require('../invoices/invoices.routes');
 
@@ -20,6 +22,8 @@ router.delete('/profile', users.deleteMe);
 
 router.get('/bookings', validate(bookingsSchema.listBookings), bookings.list);
 router.get('/bookings/:id', validate(bookingsSchema.getBooking), bookings.getById);
+// Rate the vendor once the booking is completed (again to change it).
+router.post('/bookings/:id/rating', validate(reviewsSchema.rateBooking), reviews.rateBooking);
 
 // The invoice for a completed booking.
 addInvoiceRoutes(router);

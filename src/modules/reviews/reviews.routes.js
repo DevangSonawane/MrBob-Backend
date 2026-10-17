@@ -9,6 +9,7 @@ const router = Router();
 router.post('/', authenticate, authorize('CUSTOMER'), validate(schema.createReview), controller.create);
 
 router.get('/', authenticate, authorize('ADMIN'), validate(schema.listAll), controller.listAll);
+router.get('/summary', authenticate, authorize('ADMIN'), controller.getSummary);
 
 router.get('/professional/:professionalId', validate(schema.listForProfessional), controller.listForProfessional);
 

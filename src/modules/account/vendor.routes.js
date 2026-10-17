@@ -6,6 +6,8 @@ const users = require('../users/users.controller');
 const vendors = require('../vendorOnboarding/vendorOnboarding.service');
 const bookings = require('../bookings/bookings.controller');
 const bookingsSchema = require('../bookings/bookings.schema');
+const reviews = require('../reviews/reviews.controller');
+const reviewsSchema = require('../reviews/reviews.schema');
 const { addOwnRoutes: addDisputeRoutes } = require('../disputes/disputes.routes');
 const { addVendorRoutes: addJobRoutes } = require('../jobs/jobs.routes');
 const { addVendorRoutes: addWalletRoutes } = require('../wallet/wallet.routes');
@@ -24,6 +26,8 @@ router.delete('/profile', users.deleteMe);
 
 router.get('/bookings', validate(bookingsSchema.listBookings), bookings.list);
 router.get('/bookings/:id', validate(bookingsSchema.getBooking), bookings.getById);
+// Rate the customer once the booking is completed (again to change it).
+router.post('/bookings/:id/rating', validate(reviewsSchema.rateBooking), reviews.rateBooking);
 
 // Taking and doing jobs, and the money earned from them.
 addJobRoutes(router);

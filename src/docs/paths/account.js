@@ -160,6 +160,24 @@ module.exports = {
       }),
     },
 
+    '/customer/bookings/{id}/rating': {
+      post: op({
+        tag: CUSTOMER,
+        summary: 'Rate the vendor of a completed booking',
+        description:
+          'Once the booking is `COMPLETED` (otherwise **409**; `actions.canRate` says when). 1 to 5 stars and an optional comment. Sending again ' +
+          'changes the rating. Returns the booking with its `ratings`. **404** for a booking that is not the customer\'s.',
+        access: 'CUSTOMER',
+        params: [bookingId],
+        body: jsonBody(
+          { type: 'object', required: ['rating'], properties: { rating: { type: 'integer', minimum: 1, maximum: 5 }, comment: { type: 'string', maxLength: 1000 } } },
+          { rating: 5, comment: 'Very professional and on time' },
+        ),
+        responses: { 200: ok('The booking, with the rating', ref('BookingDetail')) },
+        errors: [404, 409],
+      }),
+    },
+
     '/vendor/profile': {
       get: op({
         tag: VENDOR,
@@ -239,6 +257,23 @@ module.exports = {
         params: [bookingId],
         responses: { 200: ok('The booking', ref('BookingDetail'), examples.booking('assigned', 'admin')) },
         errors: [403, 404],
+      }),
+    },
+    '/vendor/bookings/{id}/rating': {
+      post: op({
+        tag: VENDOR,
+        summary: 'Rate the customer of a completed job',
+        description:
+          'Once the booking is `COMPLETED` (otherwise **409**; `actions.canRate` says when). 1 to 5 stars and an optional comment. Sending again ' +
+          'changes the rating. Returns the booking with its `ratings`. **404** for a job that is not the vendor\'s.',
+        access: 'PROFESSIONAL',
+        params: [bookingId],
+        body: jsonBody(
+          { type: 'object', required: ['rating'], properties: { rating: { type: 'integer', minimum: 1, maximum: 5 }, comment: { type: 'string', maxLength: 1000 } } },
+          { rating: 5, comment: 'Clear instructions, easy to work with' },
+        ),
+        responses: { 200: ok('The booking, with the rating', ref('BookingDetail')) },
+        errors: [404, 409],
       }),
     },
   },

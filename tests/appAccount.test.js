@@ -147,6 +147,42 @@ describe('Customer and vendor app: profile and bookings', () => {
     await prisma.booking.update({ where: { id: booking.id }, data: { status: 'ASSIGNED', completedAt: null } });
   });
 
+  it('lets the customer and the vendor rate each other once the job is completed', async () => {
+    const admin = await make('ADMIN', 'rate-admin');
+    const rate = (who, prefix, body) => request(app).post(`${API}/${prefix}/bookings/${booking.id}/rating`).set(who.auth).send(body);
+    expect((await rate(customer, 'customer', { rating: 5 })).status).toBe(409); // not completed yet
+
+    await request(app).patch(`${API}/bookings/${booking.id}/status`).set(admin.auth).send({ status: 'IN_PROGRESS' });
+    await request(app).patch(`${API}/bookings/${booking.id}/status`).set(admin.auth).send({ status: 'COMPLETED' });
+
+    expect((await rate(customer, 'customer', { rating: 6 })).status).toBe(400);
+    expect((await rate(other, 'customer', { rating: 5 })).status).toBe(404);
+    const byCustomer = await rate(customer, 'customer', { rating: 4, comment: 'Good work' });
+    expect(byCustomer.status).toBe(200);
+    expect(byCustomer.body.data).toMatchObject({ actions: { canRate: true }, ratings: { byCustomer: { rating: 4, comment: 'Good work' }, byVendor: null } });
+    // Changing it updates the vendor's average.
+    await rate(customer, 'customer', { rating: 5 });
+    expect(Number((await prisma.professional.findUnique({ where: { id: vendor.professionalId } })).rating)).toBe(5);
+
+    const byVendor = await rate(vendor, 'vendor', { rating: 3, comment: 'Late to open the door' });
+    expect(byVendor.body.data.ratings).toEqual({ byCustomer: null, byVendor: expect.objectContaining({ rating: 3 }) });
+    // Each side sees only its own; the team sees both.
+    expect((await get(customer, `/customer/bookings/${booking.id}`)).body.data.ratings.byVendor).toBeNull();
+    expect((await get(admin, `/bookings/${booking.id}`)).body.data.ratings).toMatchObject({ byCustomer: { rating: 5 }, byVendor: { rating: 3 } });
+
+    const ofVendors = await get(admin, `/reviews?authorRole=CUSTOMER&professionalId=${vendor.professionalId}`);
+    expect(ofVendors.body.items).toHaveLength(1);
+    expect(ofVendors.body.items[0]).toMatchObject({ rating: 5, from: { type: 'CUSTOMER', id: customer.id }, about: { type: 'VENDOR', professionalId: vendor.professionalId } });
+    expect(ofVendors.body.summary).toMatchObject({ average: 5, count: 1 });
+    const ofCustomer = await get(admin, `/reviews?authorRole=PROFESSIONAL&customerId=${customer.id}`);
+    expect(ofCustomer.body.items[0]).toMatchObject({ rating: 3, from: { type: 'VENDOR' }, about: { type: 'CUSTOMER', id: customer.id } });
+    expect((await get(admin, '/reviews/summary')).body.data).toMatchObject({ vendorRatings: expect.any(Object), customerRatings: expect.any(Object) });
+    expect((await get(customer, '/reviews/summary')).status).toBe(403);
+
+    await prisma.review.deleteMany({ where: { bookingId: booking.id } });
+    await prisma.booking.update({ where: { id: booking.id }, data: { status: 'ASSIGNED', completedAt: null } });
+  });
+
   it('lets a super admin edit everything on a vendor\'s profile', async () => {
     const superAdmin = await make('SUPER_ADMIN', 'app-super');
     const admin = await make('ADMIN', 'app-admin');

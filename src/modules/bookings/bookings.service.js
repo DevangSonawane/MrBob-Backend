@@ -57,6 +57,7 @@ const bookingInclude = {
   payment: true,
   images: { select: { id: true, createdAt: true }, orderBy: { createdAt: 'asc' } },
   invoice: { select: { id: true, sequence: true, issuedAt: true } },
+  reviews: { select: { authorRole: true, rating: true, comment: true, createdAt: true, updatedAt: true } },
   customer: { select: { id: true, name: true, phone: true, email: true } },
   // Only what a booking screen needs — the professional row also holds
   // personal onboarding details that must not reach customers.
@@ -104,6 +105,11 @@ const nextJobStep = (booking) => {
   if (booking.status !== 'IN_PROGRESS') return null;
   if (!booking.completionOtpVerifiedAt) return 'VERIFY_COMPLETION_OTP';
   return booking.images.length === 0 ? 'UPLOAD_IMAGES' : 'COMPLETE';
+};
+
+const ratingView = (booking, authorRole) => {
+  const review = booking.reviews?.find((item) => item.authorRole === authorRole);
+  return review ? { rating: review.rating, comment: review.comment, ratedAt: review.updatedAt ?? review.createdAt } : null;
 };
 
 const toView = (booking, viewer) => {
@@ -154,6 +160,11 @@ const toView = (booking, viewer) => {
     job: { nextStep: nextJobStep(booking), completionOtpVerified: Boolean(booking.completionOtpVerifiedAt) },
     // Photos of the finished work (each `url` needs the caller's token).
     completionImages: booking.images.map((image) => ({ id: image.id, url: `/bookings/${booking.id}/completion-images/${image.id}`, uploadedAt: image.createdAt })),
+    // The two ratings on a completed booking. Each side sees its own; the team sees both.
+    ratings: {
+      byCustomer: role === 'PROFESSIONAL' ? null : ratingView(booking, 'CUSTOMER'),
+      byVendor: isCustomer ? null : ratingView(booking, 'PROFESSIONAL'),
+    },
     // The customer's invoice, once the job is completed (not shown to the vendor).
     invoice:
       booking.invoice && role !== 'PROFESSIONAL'
@@ -172,6 +183,8 @@ const toView = (booking, viewer) => {
       canPay: isCustomer && booking.status === 'AWAITING_PAYMENT',
       canCancel: role === 'ADMIN' ? OPEN_STATUSES.includes(booking.status) : isCustomer && CUSTOMER_CHANGEABLE.includes(booking.status),
       canReschedule: role !== 'PROFESSIONAL' && CUSTOMER_CHANGEABLE.includes(booking.status),
+      // Rate (or re-rate) the other side once the job is done.
+      canRate: role !== 'ADMIN' && booking.status === 'COMPLETED',
       canCollectPayment:
         role !== 'CUSTOMER' && booking.paymentMode === 'PAY_AFTER_SERVICE' && !paid && ['IN_PROGRESS', 'COMPLETED'].includes(booking.status),
     },

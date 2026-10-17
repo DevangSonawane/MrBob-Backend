@@ -272,6 +272,7 @@ const bookingExample = (stage, viewer = 'customer') => {
     otp: viewer === 'vendor' ? null : { start: stage === 'assigned' ? '4821' : null, completion: null },
     job: { nextStep: stage === 'assigned' ? 'START' : null, completionOtpVerified: false },
     completionImages: [],
+    ratings: { byCustomer: null, byVendor: null },
     invoice: null,
     ...(!customer && { customer: { id: 'd4c3b2a1-9999-4f8e-8d7c-6b5a4f3e2d1c', name: 'Aarav Mehta', phone: '+919898989898', email: 'aarav@example.com' } }),
     cancellation: stage === 'cancelled' ? { at: '2026-10-07T07:00:00.000Z', by: 'CUSTOMER', reason: 'Plans changed, will rebook next week' } : null,
@@ -279,6 +280,7 @@ const bookingExample = (stage, viewer = 'customer') => {
       canPay: customer && stage === 'awaitingPayment',
       canCancel: open,
       canReschedule: open,
+      canRate: false,
       canCollectPayment: false,
     },
     assignedAt: stage === 'assigned' ? '2026-10-07T06:20:00.000Z' : null,
@@ -616,6 +618,13 @@ const schemas = {
         ...arrayOf(object({ id: id(), url: str('/bookings/…/completion-images/…', { description: 'API path; fetch with the caller\'s token' }), uploadedAt: dateTime() })),
         description: 'Photos of the finished work, uploaded by the vendor',
       },
+      ratings: {
+        ...object({
+          byCustomer: nullable(object({ rating: { type: 'integer', minimum: 1, maximum: 5, example: 5 }, comment: nullable(str('Very professional and on time')), ratedAt: dateTime() })),
+          byVendor: nullable(object({ rating: { type: 'integer', minimum: 1, maximum: 5, example: 4 }, comment: nullable(str('Clear instructions, easy to work with')), ratedAt: dateTime() })),
+        }),
+        description: 'The ratings on a completed booking: the customer\'s rating of the vendor, and the vendor\'s rating of the customer. Each side sees only its own; admins see both.',
+      },
       invoice: {
         ...nullable(
           object({
@@ -631,7 +640,7 @@ const schemas = {
       customer: { ...object({ id: id(), name: str('Aarav Mehta'), phone: nullable(str('+919812345678')), email: nullable(str()) }), description: 'Only in responses to professionals and admins' },
       cancellation: nullable(object({ at: dateTime(), by: oneOf(['CUSTOMER', 'PROFESSIONAL', 'ADMIN', 'SYSTEM']), reason: nullable(str('Plans changed')) })),
       actions: {
-        ...object({ canPay: { type: 'boolean' }, canCancel: { type: 'boolean' }, canReschedule: { type: 'boolean' }, canCollectPayment: { type: 'boolean' } }),
+        ...object({ canPay: { type: 'boolean' }, canCancel: { type: 'boolean' }, canReschedule: { type: 'boolean' }, canRate: { type: 'boolean', description: 'The booking is completed: the caller can rate the other side (or change their rating)' }, canCollectPayment: { type: 'boolean' } }),
         description: 'What the caller may do with this booking right now — drive button visibility from this',
       },
       assignedAt: nullable(dateTime()),
@@ -726,9 +735,11 @@ const schemas = {
     id: id(),
     bookingId: id(),
     userId: id(),
+    authorRole: oneOf(['CUSTOMER', 'PROFESSIONAL'], 'CUSTOMER'),
     rating: { type: 'integer', minimum: 1, maximum: 5, example: 5 },
     comment: nullable(str('Very professional and punctual.')),
     createdAt: dateTime(),
+    updatedAt: dateTime(),
   }),
   Partner: object({ id: id(), type: oneOf(['BUILDER', 'RWA'], 'BUILDER'), name: str('Prestige Group'), cityId: id(), contact: nullable(str('+919000011111')), createdAt: dateTime() }),
   DashboardStats: object({

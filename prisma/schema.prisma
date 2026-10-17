@@ -383,7 +383,7 @@ model Booking {
   city         City?           @relation(fields: [cityId], references: [id])
   zone         Zone?           @relation(fields: [zoneId], references: [id])
   payment      Payment?
-  review       Review?
+  reviews      Review[]
   partnerId    String?
   partner      Partner?        @relation(fields: [partnerId], references: [id])
   events       BookingEvent[]
@@ -496,17 +496,24 @@ model Payment {
 // Reviews module
 // ---------------------------------------------------------------------------
 
+// A rating left on a completed booking. Both sides rate: the customer rates
+// the vendor (authorRole CUSTOMER) and the vendor rates the customer
+// (authorRole PROFESSIONAL), once each per booking; either may change theirs.
 model Review {
-  id        String   @id @default(uuid())
-  bookingId String   @unique
-  userId    String
-  rating    Int
-  comment   String?
-  createdAt DateTime @default(now())
+  id         String       @id @default(uuid())
+  bookingId  String
+  userId     String // who wrote it
+  authorRole BookingActor @default(CUSTOMER)
+  rating     Int
+  comment    String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @default(now()) @updatedAt
 
   booking Booking @relation(fields: [bookingId], references: [id])
   user    User    @relation(fields: [userId], references: [id])
 
+  @@unique([bookingId, authorRole])
+  @@index([authorRole, createdAt])
   @@map("reviews")
 }
 
