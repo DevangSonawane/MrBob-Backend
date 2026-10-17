@@ -56,6 +56,22 @@ module.exports = {
         errors: [403],
       }),
     },
+    '/auth/vendor-login': {
+      post: op({
+        tag: TAG,
+        summary: 'Vendor sign-in for the web dashboard',
+        description:
+          'Request the code with `POST /auth/otp/request` first. Unlike **Verify the OTP and sign in**, this never creates an account: the ' +
+          'number must already belong to a vendor (otherwise **403**). Returns **400** for a wrong or expired code.',
+        access: 'public',
+        body: jsonBody(
+          { type: 'object', required: ['phone', 'otp'], properties: { phone, otp: { type: 'string', pattern: '^\\d{4}$', example: '4829' } } },
+          { phone: '+919812345678', otp: '4829' },
+        ),
+        responses: { 200: ok('Signed in', session, sessionExample) },
+        errors: [403],
+      }),
+    },
     '/auth/signup': {
       post: op({
         tag: TAG,

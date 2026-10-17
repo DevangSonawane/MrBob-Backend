@@ -11,6 +11,13 @@ const requestOtp = {
   }),
 };
 
+const vendorLogin = {
+  body: z.object({
+    phone: phoneSchema,
+    otp: z.string().regex(new RegExp(`^\\d{${OTP_LENGTH}}$`), `OTP must be ${OTP_LENGTH} digits`),
+  }),
+};
+
 const verifyOtp = {
   body: z.object({
     phone: phoneSchema,
@@ -46,4 +53,4 @@ const login = {
   }),
 };
 
-module.exports = { requestOtp, verifyOtp, refresh, signup, login };
+module.exports = { requestOtp, verifyOtp, refresh, signup, login, vendorLogin };

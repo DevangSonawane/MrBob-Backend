@@ -43,13 +43,12 @@ const myJob = async (id, user, status, hint) => {
   return booking;
 };
 
-// Jobs a vendor may take: nobody has them yet, for a service the vendor
-// offers, in the vendor's city (or with no city recorded).
-const availableWhere = (vendor) => ({
+// Jobs a vendor may take: every confirmed booking nobody has taken yet.
+// For now there is no matching on the vendor's services or city — any
+// approved vendor sees and can accept any open order.
+const availableWhere = () => ({
   status: { in: OPEN_FOR_VENDORS },
   professionalId: null,
-  categoryId: { in: vendor.categories },
-  ...(vendor.user.cityId && { OR: [{ cityId: vendor.user.cityId }, { cityId: null }] }),
 });
 
 const availableInclude = { category: { select: { id: true, name: true, tier: true } }, city: { select: { id: true, name: true } }, zone: { select: { id: true, name: true } } };

@@ -245,3 +245,110 @@ describe('Vendor jobs and wallet', () => {
     });
   });
 });
+
+describe('Booking for a customer from the dashboard', () => {
+  const run2 = `${Date.now().toString(36)}b`;
+  const made = { users: [], categories: [], cities: [] };
+  let admin;
+  let city;
+  let zone;
+  let category;
+  let vendor;
+  const phone = `+9190${String(Date.now()).slice(-8)}`;
+
+  const make = async (role, label, data = {}) => {
+    const user = await prisma.user.create({ data: { name: `${label} ${run2}`, email: `${label}-${run2}@example.com`, role, ...data } });
+    made.users.push(user.id);
+    return { ...user, auth: { Authorization: `Bearer ${issueTokenPair(user).accessToken}` } };
+  };
+  const book = (who, body) => request(app).post(`${API}/bookings/admin`).set(who.auth).send(body);
+  const soon = () => new Date(Date.now() + 30 * 60 * 1000).toISOString();
+
+  beforeAll(async () => {
+    admin = await make('ADMIN', 'adm-book');
+    city = await prisma.city.create({ data: { name: `Admin City ${run2}`, tier: 'TIER_1' } });
+    made.cities.push(city.id);
+    zone = await prisma.zone.create({ data: { cityId: city.id, name: 'West' } });
+    category = await prisma.serviceCategory.create({ data: { name: `Admin Service ${run2}`, tier: 'REPAIR', basePrice: 450 } });
+    made.categories.push(category.id);
+    vendor = await make('PROFESSIONAL', 'adm-vendor');
+    vendor.professionalId = (await prisma.professional.create({ data: { userId: vendor.id, categories: [category.id], onboardingStatus: 'APPROVED', kycStatus: 'VERIFIED' } })).id;
+  });
+
+  afterAll(async () => {
+    const customers = (await prisma.user.findMany({ where: { phone }, select: { id: true } })).map((row) => row.id);
+    await prisma.booking.deleteMany({ where: { categoryId: { in: made.categories } } });
+    await prisma.address.deleteMany({ where: { userId: { in: customers } } });
+    await prisma.professional.deleteMany({ where: { userId: { in: made.users } } });
+    await prisma.user.deleteMany({ where: { id: { in: [...made.users, ...customers] } } });
+    await prisma.serviceCategory.deleteMany({ where: { id: { in: made.categories } } });
+    await prisma.zone.deleteMany({ where: { cityId: { in: made.cities } } });
+    await prisma.city.deleteMany({ where: { id: { in: made.cities } } });
+  });
+
+  it('creates the customer and their address, and books for them', async () => {
+    const customer = await make('CUSTOMER', 'adm-cust');
+    expect((await book(customer, {})).status).toBe(403);
+    const body = {
+      newCustomer: { name: 'Neha Sharma', phone },
+      address: { line1: '22, Hill Road', cityId: city.id, zoneId: zone.id, state: 'Maharashtra', pincode: '400050' },
+      categoryId: category.id,
+      scheduledAt: soon(),
+      description: 'Kitchen tap is leaking',
+      note: 'Booked over the phone',
+    };
+    expect((await book(admin, { ...body, newCustomer: undefined })).status).toBe(400);
+    expect((await book(admin, { ...body, scheduledAt: new Date(Date.now() - 60000).toISOString() })).status).toBe(400);
+
+    const res = await book(admin, body);
+    expect(res.status).toBe(201);
+    expect(res.body.data).toMatchObject({ status: 'PENDING', price: 450, payment: { mode: 'PAY_AFTER_SERVICE' }, address: { city: { id: city.id }, zone: { id: zone.id } }, customer: { phone } });
+    expect(res.body.data.timeline[0]).toMatchObject({ type: 'CREATED', actorRole: 'ADMIN', note: 'Booked by the team: Booked over the phone' });
+    const created = await prisma.user.findUnique({ where: { phone }, include: { addresses: true } });
+    expect(created).toMatchObject({ role: 'CUSTOMER', name: 'Neha Sharma' });
+    expect(created.addresses).toHaveLength(1);
+
+    // The same phone again reuses that customer; their saved address can be picked, and a vendor assigned at once.
+    const again = await book(admin, { customerId: created.id, addressId: created.addresses[0].id, categoryId: category.id, scheduledAt: soon(), description: 'Bathroom tap too', price: 600, professionalId: vendor.professionalId });
+    expect(again.status).toBe(201);
+    expect(again.body.data).toMatchObject({ status: 'ASSIGNED', price: 600, professional: { id: vendor.professionalId }, otp: { start: expect.stringMatching(/^\d{4}$/) } });
+    const reused = await book(admin, { ...body, newCustomer: { name: 'Someone Else', phone } });
+    expect(reused.body.data.customer.id).toBe(created.id);
+  });
+});
+
+describe('Vendor sign-in for the web dashboard', () => {
+  const tag = `${Date.now().toString(36)}c`;
+  const vendorPhone = `+9188${String(Date.now()).slice(-8)}`;
+  const customerPhone = `+9177${String(Date.now()).slice(-8)}`;
+  const strangerPhone = `+9166${String(Date.now()).slice(-8)}`;
+  const ids = [];
+  // Catches the code the server "sends", whatever its OTP mode is.
+  const notifications = require('../src/modules/notifications/notifications.service');
+  const sent = {};
+  const signIn = async (phone) => {
+    const spy = jest.spyOn(notifications, 'sendOtp').mockImplementation(async (to, code) => {
+      sent[to] = code;
+    });
+    await request(app).post(`${API}/auth/otp/request`).send({ phone });
+    spy.mockRestore();
+    return request(app).post(`${API}/auth/vendor-login`).send({ phone, otp: sent[phone] });
+  };
+
+  beforeAll(async () => {
+    ids.push((await prisma.user.create({ data: { name: `Login Vendor ${tag}`, phone: vendorPhone, role: 'PROFESSIONAL' } })).id);
+    ids.push((await prisma.user.create({ data: { name: `Login Customer ${tag}`, phone: customerPhone, role: 'CUSTOMER' } })).id);
+  });
+  afterAll(() => prisma.user.deleteMany({ where: { id: { in: ids } } }));
+
+  it('signs in an existing vendor, and nobody else', async () => {
+    const ok = await signIn(vendorPhone);
+    expect(ok.status).toBe(200);
+    expect(ok.body.data.user).toMatchObject({ role: 'PROFESSIONAL', phone: vendorPhone });
+    expect(ok.body.data.accessToken).toBeTruthy();
+
+    expect((await signIn(customerPhone)).status).toBe(403);
+    expect((await signIn(strangerPhone)).status).toBe(403);
+    expect(await prisma.user.findUnique({ where: { phone: strangerPhone } })).toBeNull();
+  });
+});

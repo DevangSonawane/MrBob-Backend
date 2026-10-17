@@ -12,6 +12,8 @@ const router = Router();
 
 // The whole booking — service, date & time, problem, address, payment choice — in one call.
 router.post('/', authenticate, authorize('CUSTOMER'), validate(schema.createBooking), controller.create);
+// The same, made by the team from the web dashboard for a customer who called or walked in.
+router.post('/admin', authenticate, authorize('ADMIN'), validate(schema.createForCustomer), controller.createForCustomer);
 
 // Customers see their own bookings, professionals their jobs, admins everything (with filters).
 router.get('/', authenticate, validate(schema.listBookings), controller.list);

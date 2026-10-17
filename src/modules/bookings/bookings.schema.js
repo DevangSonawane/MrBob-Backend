@@ -26,6 +26,47 @@ const createBooking = {
   }),
 };
 
+// A booking made by the team for a customer (web dashboard). Give either an
+// existing customer or a new one, and either one of their addresses or a new one.
+const adminAddress = z.object({
+  label: z.enum(['HOME', 'WORK', 'OTHER']).optional(),
+  line1: z.string().trim().min(3, 'Enter the house / street').max(200),
+  line2: z.string().trim().max(200).nullish(),
+  landmark: z.string().trim().max(120).nullish(),
+  cityId: z.uuid(),
+  zoneId: z.uuid().nullish(),
+  state: z.string().trim().min(2).max(60),
+  pincode: z.string().regex(/^[1-9]\d{5}$/, 'Pincode must be 6 digits'),
+  contactName: z.string().trim().max(100).nullish(),
+  contactPhone: z.string().regex(/^\+?[1-9]\d{9,14}$/, 'Invalid phone number').nullish(),
+});
+
+const createForCustomer = {
+  body: z
+    .object({
+      customerId: z.uuid().optional(),
+      newCustomer: z
+        .object({
+          name: z.string().trim().min(2).max(100),
+          phone: z.string().regex(/^\+[1-9]\d{9,14}$/, 'Use the international format, e.g. +919812345678'),
+          email: z.email().optional().or(z.literal('')),
+        })
+        .optional(),
+      addressId: z.uuid().optional(),
+      address: adminAddress.optional(),
+      categoryId: z.uuid(),
+      scheduledAt,
+      description: z.string().trim().min(3, 'Describe the problem').max(1000),
+      // Defaults to the service's base price.
+      price: z.coerce.number().positive().max(1000000).optional(),
+      professionalId: z.uuid().optional(), // assign a vendor straight away
+      note: z.string().trim().max(500).optional(), // for the timeline, e.g. "Booked over the phone"
+    })
+    .refine((data) => Boolean(data.customerId) !== Boolean(data.newCustomer), { message: 'Give either customerId or newCustomer', path: ['customerId'] })
+    .refine((data) => Boolean(data.addressId) !== Boolean(data.address), { message: 'Give either addressId or address', path: ['addressId'] })
+    .refine((data) => !(data.newCustomer && data.addressId), { message: 'A new customer has no saved addresses — send address', path: ['addressId'] }),
+};
+
 const listBookings = {
   query: paginationQuery.extend({
     status: commaList(STATUSES).optional(),
@@ -86,6 +127,7 @@ const markRefunded = {
 module.exports = {
   STATUSES,
   createBooking,
+  createForCustomer,
   listBookings,
   getBooking,
   confirmPayment,

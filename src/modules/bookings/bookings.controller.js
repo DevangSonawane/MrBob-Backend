@@ -1,5 +1,6 @@
 const catchAsync = require('../../utils/catchAsync');
 const service = require('./bookings.service');
+const adminBooking = require('./adminBooking.service');
 
 const ok = (res, data, status = 200) => res.status(status).json({ success: true, data });
 
@@ -26,6 +27,8 @@ const collectPayment = catchAsync(async (req, res) => ok(res, await service.coll
 
 const markRefunded = catchAsync(async (req, res) => ok(res, await service.markRefunded(req.params.id, req.user, req.body.reference)));
 
+const createForCustomer = catchAsync(async (req, res) => ok(res, await adminBooking.create(req.user, req.body), 201));
+
 const remove = catchAsync(async (req, res) => ok(res, await service.remove(req.params.id)));
 
-module.exports = { remove, create, confirmPayment, list, getSummary, getById, updateStatus, cancel, reschedule, collectPayment, markRefunded };
+module.exports = { createForCustomer, remove, create, confirmPayment, list, getSummary, getById, updateStatus, cancel, reschedule, collectPayment, markRefunded };

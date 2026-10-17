@@ -51,6 +51,20 @@ const verifyOtpAndLogin = async (phone, otp, name) => {
   return { user, ...tokens };
 };
 
+// Sign-in for the vendor view of the web dashboard. Unlike verifyOtpAndLogin
+// it never creates an account: the number must already belong to a vendor.
+const verifyVendorOtp = async (phone, otp) => {
+  const user = await prisma.user.findUnique({ where: { phone } });
+  if (!user || user.deletedAt || user.role !== 'PROFESSIONAL') {
+    throw ApiError.forbidden('There is no vendor account for this phone number. Register in the vendor app first.');
+  }
+  if (!otpStore.verifyOtp(phone, otp)) throw ApiError.badRequest('Invalid or expired OTP');
+  if (!user.isActive) throw ApiError.forbidden('This account has been deactivated');
+
+  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+  return { user, ...issueTokenPair(user) };
+};
+
 const signupWithEmail = async ({ name, email, password, phone }) => {
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -121,6 +135,7 @@ const getProfile = async (userId) => {
 module.exports = {
   requestOtp,
   verifyOtpAndLogin,
+  verifyVendorOtp,
   signupWithEmail,
   loginWithEmail,
   refreshTokens,

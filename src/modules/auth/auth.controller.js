@@ -16,6 +16,11 @@ const requestOtp = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: result });
 });
 
+const vendorLogin = catchAsync(async (req, res) => {
+  const { user, accessToken, refreshToken } = await authService.verifyVendorOtp(req.body.phone, req.body.otp);
+  res.status(200).json({ success: true, data: { user: toPublicUser(user), accessToken, refreshToken } });
+});
+
 const verifyOtp = catchAsync(async (req, res) => {
   const { phone, otp, name } = req.body;
   const { user, accessToken, refreshToken } = await authService.verifyOtpAndLogin(phone, otp, name);
@@ -52,4 +57,4 @@ const me = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: sanitizeUser(user) });
 });
 
-module.exports = { requestOtp, verifyOtp, signup, login, refresh, me };
+module.exports = { requestOtp, verifyOtp, signup, login, refresh, me, vendorLogin };

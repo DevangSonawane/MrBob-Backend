@@ -185,6 +185,64 @@ module.exports = {
       }),
     },
 
+    '/bookings/admin': {
+      post: op({
+        tag: [ADMIN, SUPER_ADMIN],
+        summary: 'Book a service for a customer (web dashboard)',
+        description:
+          'For a customer who called or walked in. Send **either** `customerId` (an existing customer) **or** `newCustomer` — a phone number that ' +
+          'already belongs to a customer reuses that account; otherwise a new customer account is created, which they can later sign in to with ' +
+          'that number. Send **either** `addressId` (one of that customer\'s addresses) **or** `address` (saved to their addresses).\n\n' +
+          'The booking is `PENDING` and paid after the service. `price` defaults to the service\'s base price. With `professionalId` an approved ' +
+          'vendor offering the service is assigned straight away (the booking is `ASSIGNED` and the customer sees the start code). Any time in ' +
+          'the future, up to 60 days ahead. The customer is notified.',
+        access: 'ADMIN',
+        body: jsonBody(
+          {
+            type: 'object',
+            required: ['categoryId', 'scheduledAt', 'description'],
+            properties: {
+              customerId: { type: 'string', format: 'uuid', description: 'An existing customer' },
+              newCustomer: { type: 'object', description: 'Instead of customerId', properties: { name: { type: 'string' }, phone: { type: 'string', example: '+919812345678' }, email: { type: 'string', format: 'email' } } },
+              addressId: { type: 'string', format: 'uuid', description: "One of the customer's saved addresses" },
+              address: {
+                type: 'object',
+                description: 'Instead of addressId; required for a new customer',
+                properties: {
+                  label: { type: 'string', enum: ['HOME', 'WORK', 'OTHER'] },
+                  line1: { type: 'string' },
+                  line2: { type: 'string' },
+                  landmark: { type: 'string' },
+                  cityId: { type: 'string', format: 'uuid' },
+                  zoneId: { type: 'string', format: 'uuid' },
+                  state: { type: 'string' },
+                  pincode: { type: 'string' },
+                  contactName: { type: 'string' },
+                  contactPhone: { type: 'string' },
+                },
+              },
+              categoryId: { type: 'string', format: 'uuid' },
+              scheduledAt,
+              description: { type: 'string', minLength: 3, maxLength: 1000 },
+              price: { type: 'number', description: "Defaults to the service's base price" },
+              professionalId: { type: 'string', format: 'uuid', description: 'Assign this approved vendor straight away' },
+              note: { type: 'string', maxLength: 500, description: 'Added to the timeline, e.g. "Booked over the phone"' },
+            },
+          },
+          {
+            newCustomer: { name: 'Neha Sharma', phone: '+919812300000' },
+            address: { line1: '22, Hill Road', cityId: examples.address.city.id, zoneId: examples.address.zone.id, state: 'Maharashtra', pincode: '400050' },
+            categoryId: '3f2e1d0c-2222-4b3a-8c7d-6e5f4a3b2c1d',
+            scheduledAt: '2026-10-19T11:00:00+05:30',
+            description: 'Kitchen tap is leaking',
+            note: 'Booked over the phone',
+          },
+        ),
+        responses: { 201: ok('Booking created', booking, { ...examples.booking('payLater', 'admin') }) },
+        errors: [409],
+      }),
+    },
+
     '/bookings/summary': {
       get: op({
         tag: [ADMIN, SUPER_ADMIN],

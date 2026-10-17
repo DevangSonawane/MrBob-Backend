@@ -180,7 +180,7 @@ module.exports = {
       get: op({
         tag: JOBS,
         summary: 'Step 1 — jobs I can take',
-        description: 'Bookings nobody has taken yet, for a service the vendor offers, in the vendor\'s city. Soonest first.',
+        description: 'Every confirmed booking nobody has taken yet, soonest first. For now there is no matching on the vendor\'s services or city: any approved vendor sees and can accept any open order. An online booking appears once it is paid.',
         access: 'PROFESSIONAL',
         params: pageParams,
         responses: { 200: paginated('A page of open jobs', availableJob) },
