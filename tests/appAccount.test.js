@@ -128,6 +128,12 @@ describe('Customer and vendor app: profile and bookings', () => {
     expect(invoice.body.data.invoiceNumber).toMatch(/^INV-\d{6}$/);
     expect((await get(other, `/customer/bookings/${booking.id}/invoice`)).status).toBe(404);
 
+    // The booking itself now points at its invoice.
+    const detail = (await get(customer, `/customer/bookings/${booking.id}`)).body.data;
+    expect(detail.invoice).toMatchObject({ id: invoice.body.data.id, invoiceNumber: invoice.body.data.invoiceNumber, pdf: invoice.body.data.pdf });
+    expect((await get(vendor, `/vendor/bookings/${booking.id}`)).body.data.invoice).toBeNull();
+    expect((await get(admin, `/invoices?customerId=${customer.id}`)).body.items.map((item) => item.id)).toEqual([invoice.body.data.id]);
+
     const file = await get(customer, invoice.body.data.pdf);
     expect(file.status).toBe(200);
     expect(file.headers['content-type']).toBe('application/pdf');

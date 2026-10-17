@@ -86,6 +86,7 @@ module.exports = {
         params: [
           queryParam('search', 'An invoice number (`INV-000042`) or booking number (`BK-000123`), or the customer\'s name / phone / email'),
           queryParam('status', 'Paid or not yet paid', { type: 'string', enum: ['PAID', 'UNPAID'] }),
+          queryParam('customerId', 'Only this customer\'s invoices', { type: 'string', format: 'uuid' }),
           dateParam('issuedFrom', 'Issued on or after this date'),
           dateParam('issuedTo', 'Issued on or before this date'),
           ...pageParams,

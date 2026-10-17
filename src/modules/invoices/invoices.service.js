@@ -105,14 +105,15 @@ const adminView = (invoice) => toView(invoice, { pdfPath: `/invoices/${invoice.i
 
 const getById = async (id) => adminView(await find(id));
 
-const list = async ({ page, limit, search, issuedFrom, issuedTo, status }) => {
+const list = async ({ page, limit, search, issuedFrom, issuedTo, status, customerId }) => {
   const issuedAt = dateRange(issuedFrom, issuedTo);
   const number = search?.match(/^(inv|bk)-?0*(\d+)$/i);
   const paid = { payment: { is: { status: 'SUCCESS' } } };
   const where = {
     ...(issuedAt && { issuedAt }),
-    ...(status === 'PAID' && { booking: paid }),
-    ...(status === 'UNPAID' && { booking: { NOT: paid } }),
+    ...(customerId && { booking: { customerId } }),
+    ...(status === 'PAID' && { booking: { ...(customerId && { customerId }), ...paid } }),
+    ...(status === 'UNPAID' && { booking: { ...(customerId && { customerId }), NOT: paid } }),
     ...(search &&
       (number
         ? number[1].toLowerCase() === 'inv'

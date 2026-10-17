@@ -272,6 +272,7 @@ const bookingExample = (stage, viewer = 'customer') => {
     otp: viewer === 'vendor' ? null : { start: stage === 'assigned' ? '4821' : null, completion: null },
     job: { nextStep: stage === 'assigned' ? 'START' : null, completionOtpVerified: false },
     completionImages: [],
+    invoice: null,
     ...(!customer && { customer: { id: 'd4c3b2a1-9999-4f8e-8d7c-6b5a4f3e2d1c', name: 'Aarav Mehta', phone: '+919898989898', email: 'aarav@example.com' } }),
     cancellation: stage === 'cancelled' ? { at: '2026-10-07T07:00:00.000Z', by: 'CUSTOMER', reason: 'Plans changed, will rebook next week' } : null,
     actions: {
@@ -614,6 +615,18 @@ const schemas = {
       completionImages: {
         ...arrayOf(object({ id: id(), url: str('/bookings/…/completion-images/…', { description: 'API path; fetch with the caller\'s token' }), uploadedAt: dateTime() })),
         description: 'Photos of the finished work, uploaded by the vendor',
+      },
+      invoice: {
+        ...nullable(
+          object({
+            id: id(),
+            invoiceNumber: str('INV-000042'),
+            issuedAt: dateTime(),
+            url: str('/customer/bookings/…/invoice', { description: 'API path of the invoice (fetch with the caller\'s token)' }),
+            pdf: str('/customer/bookings/…/invoice/pdf', { description: 'API path of the invoice PDF' }),
+          }),
+        ),
+        description: 'The customer\'s invoice, issued when the booking is completed; null before that. Always null for the vendor.',
       },
       customer: { ...object({ id: id(), name: str('Aarav Mehta'), phone: nullable(str('+919812345678')), email: nullable(str()) }), description: 'Only in responses to professionals and admins' },
       cancellation: nullable(object({ at: dateTime(), by: oneOf(['CUSTOMER', 'PROFESSIONAL', 'ADMIN', 'SYSTEM']), reason: nullable(str('Plans changed')) })),

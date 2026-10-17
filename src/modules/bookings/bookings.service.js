@@ -56,6 +56,7 @@ const bookingInclude = {
   zone: { select: { id: true, name: true } },
   payment: true,
   images: { select: { id: true, createdAt: true }, orderBy: { createdAt: 'asc' } },
+  invoice: { select: { id: true, sequence: true, issuedAt: true } },
   customer: { select: { id: true, name: true, phone: true, email: true } },
   // Only what a booking screen needs — the professional row also holds
   // personal onboarding details that must not reach customers.
@@ -153,6 +154,17 @@ const toView = (booking, viewer) => {
     job: { nextStep: nextJobStep(booking), completionOtpVerified: Boolean(booking.completionOtpVerifiedAt) },
     // Photos of the finished work (each `url` needs the caller's token).
     completionImages: booking.images.map((image) => ({ id: image.id, url: `/bookings/${booking.id}/completion-images/${image.id}`, uploadedAt: image.createdAt })),
+    // The customer's invoice, once the job is completed (not shown to the vendor).
+    invoice:
+      booking.invoice && role !== 'PROFESSIONAL'
+        ? {
+            id: booking.invoice.id,
+            invoiceNumber: `INV-${String(booking.invoice.sequence).padStart(6, '0')}`,
+            issuedAt: booking.invoice.issuedAt,
+            url: isCustomer ? `/customer/bookings/${booking.id}/invoice` : `/invoices/${booking.invoice.id}`,
+            pdf: isCustomer ? `/customer/bookings/${booking.id}/invoice/pdf` : `/invoices/${booking.invoice.id}/pdf`,
+          }
+        : null,
     // Professionals and admins need to know who the job is for.
     customer: isCustomer ? undefined : booking.customer,
     cancellation: booking.cancelledAt ? { at: booking.cancelledAt, by: booking.cancelledBy, reason: booking.cancellationReason } : null,

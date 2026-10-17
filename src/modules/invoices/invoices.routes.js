@@ -18,6 +18,7 @@ const listQuery = {
   query: paginationQuery.extend({
     search: z.string().trim().min(1).max(100).optional(), // INV-000123, BK-000123, or the customer's name / phone / email
     status: z.enum(['PAID', 'UNPAID']).optional(),
+    customerId: z.uuid().optional(), // one customer's invoices
     issuedFrom: dateOnly.optional(),
     issuedTo: dateOnly.optional(),
   }),
