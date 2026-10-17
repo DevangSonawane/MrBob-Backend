@@ -3,6 +3,7 @@ const prisma = require('../../config/prisma');
 const ApiError = require('../../utils/ApiError');
 const storage = require('../storage/storage.service');
 const wallet = require('../wallet/wallet.service');
+const invoices = require('../invoices/invoices.service');
 const { extensionFor } = require('../../middlewares/upload');
 const { toSkipTake, paginatedResponse } = require('../../utils/pagination');
 const bookings = require('../bookings/bookings.service');
@@ -189,6 +190,7 @@ const complete = async (user, id) => {
     if (count === 0) throw ApiError.conflict('This booking was just updated by someone else — reload and try again');
     await event(tx, id, user, { type: 'STATUS_CHANGED', fromStatus: 'IN_PROGRESS', toStatus: 'COMPLETED', note: 'Completed with the customer\'s code' });
     await wallet.creditForBooking(tx, booking);
+    await invoices.issueForBooking(tx, booking);
   });
 
   notify(booking.customerId, 'Job completed', 'Your service is complete. Tell us how it went.', { ...booking, status: 'COMPLETED' });

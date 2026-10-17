@@ -12,6 +12,7 @@ const sections = [
   require('./paths/account'), // the customer app's and the vendor app's profile and bookings
   require('./paths/vendorJobs'), // the vendor's job flow, wallet, and the team's payouts
   require('./paths/disputes'), // help & disputes: both apps and the support team
+  require('./paths/invoices'), // customer invoices for completed bookings
   require('./paths/users'), // also defines the "Super admin panel" section
   require('./paths/auth'),
   require('./paths/onboarding'),

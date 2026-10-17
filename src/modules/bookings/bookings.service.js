@@ -9,6 +9,7 @@ const razorpay = require('../payments/razorpay.client');
 const notifications = require('../notifications/notifications.service');
 const logger = require('../../config/logger');
 const wallet = require('../wallet/wallet.service');
+const invoices = require('../invoices/invoices.service');
 const storage = require('../storage/storage.service');
 
 // The booking flow, as the customer app presents it:
@@ -460,7 +461,10 @@ const updateStatus = async (id, { status: next, note }, user) => {
     });
     if (count === 0) throw ApiError.conflict('This booking was just updated by someone else — reload and try again');
     await event(tx, id, user, { type: 'STATUS_CHANGED', fromStatus: booking.status, toStatus: next, note });
-    if (next === 'COMPLETED') await wallet.creditForBooking(tx, booking);
+    if (next === 'COMPLETED') {
+      await wallet.creditForBooking(tx, booking);
+      await invoices.issueForBooking(tx, booking);
+    }
   });
 
   if (next === 'IN_PROGRESS') notify(booking.customerId, 'Work has started', `${booking.professional?.user.name ?? 'Your professional'} has started the job.`, booking);

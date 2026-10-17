@@ -67,6 +67,12 @@ const envSchema = z.object({
   PAYOUT_HOLD_DAYS: z.coerce.number().min(0).max(60).default(2),
   PLATFORM_COMMISSION_PERCENT: z.coerce.number().min(0).max(100).default(0),
 
+  // Printed on customer invoices.
+  INVOICE_BUSINESS_NAME: z.string().default('Mr Bob Home Services'),
+  INVOICE_BUSINESS_ADDRESS: z.string().optional(),
+  INVOICE_BUSINESS_EMAIL: z.string().optional(),
+  INVOICE_BUSINESS_PHONE: z.string().optional(),
+
   LOG_LEVEL: z.string().default('info'),
 });
 

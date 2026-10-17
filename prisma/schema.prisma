@@ -389,6 +389,7 @@ model Booking {
   events       BookingEvent[]
   disputes     Dispute[]
   images       BookingImage[]
+  invoice      Invoice?
   walletEntry  WalletEntry?
 
   @@index([customerId])
@@ -782,4 +783,22 @@ enum PayoutStatus {
   PROCESSING // handed to the provider, not confirmed yet
   PAID
   FAILED // the provider could not send it; the earnings are owed again
+}
+
+// The customer's invoice for a completed booking, issued when the job is
+// completed. The amount is fixed at that moment; the rest is read from the
+// booking. No tax is charged for now.
+model Invoice {
+  id        String   @id @default(uuid())
+  // Shown on the invoice as INV-000123.
+  sequence  Int      @unique @default(autoincrement())
+  bookingId String   @unique
+  amount    Decimal  @db.Decimal(10, 2)
+  issuedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([issuedAt])
+  @@map("invoices")
 }

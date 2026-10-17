@@ -13,6 +13,7 @@ const categoriesRoutes = require('../modules/bookings/categories.routes');
 const dispatchRoutes = require('../modules/dispatch/dispatch.routes');
 const paymentsRoutes = require('../modules/payments/payments.routes');
 const payoutsRoutes = require('../modules/wallet/wallet.routes');
+const invoicesRoutes = require('../modules/invoices/invoices.routes');
 const disputesRoutes = require('../modules/disputes/disputes.routes');
 const amcRoutes = require('../modules/amc/amc.routes');
 const reviewsRoutes = require('../modules/reviews/reviews.routes');
@@ -37,6 +38,7 @@ const mounts = [
   ['/payments', paymentsRoutes],
   ['/disputes', disputesRoutes],
   ['/payouts', payoutsRoutes],
+  ['/invoices', invoicesRoutes],
   ['/amc', amcRoutes],
   ['/reviews', reviewsRoutes],
   ['/zones', zonesRoutes],

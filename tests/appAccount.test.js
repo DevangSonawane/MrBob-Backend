@@ -115,6 +115,32 @@ describe('Customer and vendor app: profile and bookings', () => {
     expect(cleared.body.data.personalDetails).toMatchObject({ addressLine1: '14, 2nd Main Road', pincode: null });
   });
 
+  it('issues an invoice when the job is completed, for the customer and the team', async () => {
+    const admin = await make('ADMIN', 'inv-admin');
+    expect((await get(customer, `/customer/bookings/${booking.id}/invoice`)).status).toBe(404); // not completed yet
+
+    await request(app).patch(`${API}/bookings/${booking.id}/status`).set(admin.auth).send({ status: 'IN_PROGRESS' });
+    await request(app).patch(`${API}/bookings/${booking.id}/status`).set(admin.auth).send({ status: 'COMPLETED' });
+
+    const invoice = await get(customer, `/customer/bookings/${booking.id}/invoice`);
+    expect(invoice.status).toBe(200);
+    expect(invoice.body.data).toMatchObject({ status: 'UNPAID', total: 300, tax: 0, billedTo: { id: customer.id }, items: [{ quantity: 1, amount: 300 }], vendor: { id: vendor.professionalId } });
+    expect(invoice.body.data.invoiceNumber).toMatch(/^INV-\d{6}$/);
+    expect((await get(other, `/customer/bookings/${booking.id}/invoice`)).status).toBe(404);
+
+    const file = await get(customer, invoice.body.data.pdf);
+    expect(file.status).toBe(200);
+    expect(file.headers['content-type']).toBe('application/pdf');
+    expect(file.body.subarray(0, 5).toString()).toBe('%PDF-');
+
+    expect((await get(customer, '/invoices')).status).toBe(403);
+    const listed = await get(admin, `/invoices?search=${invoice.body.data.invoiceNumber}`);
+    expect(listed.body.items.map((item) => item.id)).toEqual([invoice.body.data.id]);
+    expect(listed.body.totals).toMatchObject({ invoices: 1, amount: 300, paid: 0, unpaid: 300 });
+    expect((await get(admin, `/invoices/${invoice.body.data.id}/pdf`)).headers['content-type']).toBe('application/pdf');
+    await prisma.booking.update({ where: { id: booking.id }, data: { status: 'ASSIGNED', completedAt: null } });
+  });
+
   it('lets a super admin edit everything on a vendor\'s profile', async () => {
     const superAdmin = await make('SUPER_ADMIN', 'app-super');
     const admin = await make('ADMIN', 'app-admin');
