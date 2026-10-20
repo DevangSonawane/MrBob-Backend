@@ -2,6 +2,7 @@ const { ref, ok, jsonBody, op } = require('../helpers');
 const { examples } = require('../components');
 
 const TAG = 'Auth';
+const SESSION = 'Sign-in & tokens (both apps)';
 const phone = { type: 'string', pattern: '^\\+?[1-9]\\d{9,14}$', example: '+919812345678', description: 'E.164 format' };
 const session = ref('AuthSession');
 const sessionExample = {
@@ -58,7 +59,7 @@ module.exports = {
     },
     '/auth/vendor-login': {
       post: op({
-        tag: TAG,
+        tag: [SESSION, TAG],
         summary: 'Vendor sign-in for the web dashboard',
         description:
           'Request the code with `POST /auth/otp/request` first. Unlike **Verify the OTP and sign in**, this never creates an account: the ' +
@@ -116,7 +117,7 @@ module.exports = {
     },
     '/auth/refresh': {
       post: op({
-        tag: TAG,
+        tag: [SESSION, TAG],
         summary: 'Get a new access token',
         description:
           'Call this when a request fails with **401** and `details.code` `TOKEN_EXPIRED` (or a little before `accessTokenExpiresIn` runs out), ' +
@@ -132,7 +133,7 @@ module.exports = {
     },
     '/auth/logout': {
       post: op({
-        tag: TAG,
+        tag: [SESSION, TAG],
         summary: 'Sign this device out',
         description: 'The refresh token stops working. The current access token still works until it expires (at most `accessTokenExpiresIn`). Always succeeds.',
         access: 'public',
@@ -142,7 +143,7 @@ module.exports = {
     },
     '/auth/me': {
       get: op({
-        tag: TAG,
+        tag: [SESSION, TAG],
         summary: 'Get the signed-in user',
         description: 'The user record plus their professional profile, if they have one.',
         responses: {

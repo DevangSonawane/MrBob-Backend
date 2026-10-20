@@ -63,7 +63,21 @@ module.exports = {
   // Relative, so "Try it out" always calls the server the docs were loaded
   // from — localhost in development, the real host once deployed.
   servers: [{ url: env.API_BASE_PATH, description: 'This server' }],
-  tags: sections.flatMap((section) => section.tags),
+  // "Sign-in & tokens" comes first: every app needs it before anything else.
+  tags: [
+    {
+      name: 'Sign-in & tokens (both apps)',
+      description:
+        'How the customer app and the vendor app stay signed in. Sign-in itself is the first two steps of customer or vendor onboarding ' +
+        '(phone number, then OTP); both return an `accessToken`, a `refreshToken` and `accessTokenExpiresIn`.\n\n' +
+        '- Send `Authorization: Bearer <accessToken>` on every call. It is valid for `accessTokenExpiresIn` seconds (15 minutes).\n' +
+        '- When a call fails with **401** and `details.code` `TOKEN_EXPIRED` (or just before expiry), call **`POST /auth/refresh`** with the ' +
+        'refresh token, store the new access token and retry once. The refresh token stays the same and stays valid for 30 days after it was last used.\n' +
+        '- On `SESSION_EXPIRED` or `TOKEN_INVALID`, clear the tokens and show sign-in.\n' +
+        '- On logout, call **`POST /auth/logout`**.',
+    },
+    ...sections.flatMap((section) => section.tags),
+  ],
   paths: Object.assign({}, ...sections.map((section) => section.paths)),
   components: {
     securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },

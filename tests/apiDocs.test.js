@@ -70,8 +70,9 @@ describe('API documentation', () => {
     expect(JSON.stringify(spec.servers)).not.toContain('localhost');
   });
 
-  it('lists the customer steps, then the vendor steps, first and in order', () => {
-    expect(spec.tags.slice(0, 14).map((tag) => tag.name)).toEqual([
+  it('lists sign-in & tokens, then the customer steps, then the vendor steps, first and in order', () => {
+    expect(spec.tags.slice(0, 15).map((tag) => tag.name)).toEqual([
+      'Sign-in & tokens (both apps)',
       'Customer onboarding · Step 1 – Phone number',
       'Customer onboarding · Step 2 – Verify OTP',
       'Customer onboarding · Step 3 – Name & gender',
