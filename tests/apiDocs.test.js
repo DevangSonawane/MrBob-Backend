@@ -41,6 +41,7 @@ describe('API documentation', () => {
       'POST /amc/{id}/cancel',
       'POST /users/me/addresses/{addressId}/default',
       'POST /vendor/jobs/{id}/accept',
+      'POST /vendor/jobs/{id}/decline',
       'POST /payouts/run-automatic',
       'POST /payouts/vendors/{professionalId}/payout-account/verify',
       'POST /payouts/refresh',

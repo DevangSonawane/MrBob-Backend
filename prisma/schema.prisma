@@ -137,6 +137,15 @@ model Professional {
   kycStatus  KycStatus @default(PENDING)
   rating     Decimal   @default(0) @db.Decimal(3, 2)
 
+  // Live presence, sent by the vendor app while the vendor is online. h3Cell is
+  // the H3 hexagon (resolution 8, ~0.7 km²) of the last position.
+  isOnline      Boolean   @default(false)
+  lastLatitude  Decimal?  @db.Decimal(9, 6)
+  lastLongitude Decimal?  @db.Decimal(9, 6)
+  h3Cell        String?
+  lastSeenAt    DateTime?
+  onlineSince   DateTime?
+
   // Payout terms for this vendor; null = the platform default (PayoutSettings).
   commissionPercent         Decimal?      @db.Decimal(5, 2)
   payoutHoldMinutes         Int?
@@ -181,10 +190,12 @@ model Professional {
   documents        ProfessionalDocument[]
   onboardingEvents VendorOnboardingEvent[]
   walletEntries    WalletEntry[]
+  jobOffers        JobOffer[]
   payouts          VendorPayout[]
 
   @@index([homeZoneId])
   @@index([onboardingStatus])
+  @@index([isOnline, h3Cell])
   @@map("professionals")
 }
 
@@ -366,6 +377,12 @@ model Booking {
   cancelledBy        BookingActor?
   cancellationReason String?
 
+  // Where the job is, as an H3 hexagon (resolution 8), and how far dispatch
+  // has got: offers go out in waves of widening rings around this cell.
+  h3Cell       String?
+  dispatchWave Int       @default(0)
+  openToAllAt  DateTime? // nobody nearby took it (or it has no location): any approved vendor may take it
+
   // The job is started and finished with codes the customer reads out to the
   // vendor, so neither can happen without the customer present.
   startOtp                String?
@@ -391,6 +408,7 @@ model Booking {
   disputes     Dispute[]
   images       BookingImage[]
   invoice      Invoice?
+  offers       JobOffer[]
   walletEntry  WalletEntry?
 
   @@index([customerId])
@@ -828,4 +846,34 @@ model AuthSession {
 
   @@index([userId])
   @@map("auth_sessions")
+}
+
+// A job offered to one vendor during dispatch. The first vendor to accept
+// gets the job; the others' offers are withdrawn.
+enum JobOfferStatus {
+  OFFERED
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  WITHDRAWN // someone else took it, or it was cancelled / assigned by the team
+}
+
+model JobOffer {
+  id             String         @id @default(uuid())
+  bookingId      String
+  professionalId String
+  wave           Int
+  distanceKm     Decimal?       @db.Decimal(6, 2)
+  status         JobOfferStatus @default(OFFERED)
+  offeredAt      DateTime       @default(now())
+  expiresAt      DateTime
+  respondedAt    DateTime?
+
+  booking      Booking      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId, professionalId])
+  @@index([professionalId, status])
+  @@index([status, expiresAt])
+  @@map("job_offers")
 }

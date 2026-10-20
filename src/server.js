@@ -18,6 +18,13 @@ const payoutTick = async () => {
   }
 };
 const payoutTimer = globalThis.setInterval(payoutTick, PAYOUT_INTERVAL_MS);
+
+// Nearby dispatch: every 10 seconds, expire unanswered offers and send the
+// next wave (see modules/matching).
+const matching = require('./modules/matching/matching.service');
+
+const dispatchTimer = globalThis.setInterval(() => matching.tick().catch((err) => logger.error({ err: err.message }, 'Dispatch tick failed')), 10 * 1000);
+dispatchTimer.unref();
 globalThis.setTimeout(payoutTick, 30 * 1000).unref();
 payoutTimer.unref();
 

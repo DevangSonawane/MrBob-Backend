@@ -10,6 +10,7 @@ const notifications = require('../notifications/notifications.service');
 const logger = require('../../config/logger');
 const wallet = require('../wallet/wallet.service');
 const invoices = require('../invoices/invoices.service');
+const matching = require('../matching/matching.service');
 const storage = require('../storage/storage.service');
 
 // The booking flow, as the customer app presents it:
@@ -306,6 +307,8 @@ const create = async (customer, { categoryId, scheduledAt, description, addressI
     return booking;
   });
 
+  // A confirmed booking goes out to nearby vendors (an online one waits until it is paid).
+  if (created.status === 'PENDING') matching.startSoon(created.id);
   return detail(created.id, customer);
 };
 
@@ -329,6 +332,8 @@ const markPaid = async (bookingId, { gatewayPaymentId, actor = null }) => {
     await tx.booking.update({ where: { id: bookingId }, data: { status: 'PENDING' } });
     await event(tx, bookingId, actor, { type: 'PAYMENT_RECEIVED', fromStatus: booking.status, toStatus: 'PENDING' });
   });
+  // Paid: now it goes out to nearby vendors.
+  matching.startSoon(bookingId);
 };
 
 const confirmPayment = async (id, customer, { razorpayOrderId, razorpayPaymentId, razorpaySignature }) => {
@@ -523,6 +528,7 @@ const cancel = async (id, user, reason) => {
       await tx.payment.update({ where: { id: booking.payment.id }, data: { status: 'FAILED' } });
     }
     await event(tx, id, user, { type: 'CANCELLED', fromStatus: booking.status, toStatus: 'CANCELLED', note: reason });
+    await matching.withdrawAll(id, tx);
   });
 
   if (role === 'ADMIN') notify(booking.customerId, 'Booking cancelled', `Your booking ${bookingNumber(booking.sequence)} was cancelled: ${reason}`, booking);

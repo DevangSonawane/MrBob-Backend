@@ -10,6 +10,7 @@ const reviews = require('../reviews/reviews.controller');
 const reviewsSchema = require('../reviews/reviews.schema');
 const { addOwnRoutes: addDisputeRoutes } = require('../disputes/disputes.routes');
 const { addVendorRoutes: addJobRoutes } = require('../jobs/jobs.routes');
+const { addVendorRoutes: addPresenceRoutes } = require('../matching/matching.routes');
 const { addVendorRoutes: addWalletRoutes } = require('../wallet/wallet.routes');
 const schema = require('./account.schema');
 
@@ -29,7 +30,8 @@ router.get('/bookings/:id', validate(bookingsSchema.getBooking), bookings.getByI
 // Rate the customer once the booking is completed (again to change it).
 router.post('/bookings/:id/rating', validate(reviewsSchema.rateBooking), reviews.rateBooking);
 
-// Taking and doing jobs, and the money earned from them.
+// Going online so nearby jobs are offered, then taking and doing jobs, and the money earned from them.
+addPresenceRoutes(router);
 addJobRoutes(router);
 addWalletRoutes(router);
 

@@ -3,6 +3,8 @@ const prisma = require('../../config/prisma');
 const ApiError = require('../../utils/ApiError');
 const storage = require('../storage/storage.service');
 const wallet = require('../wallet/wallet.service');
+const matching = require('../matching/matching.service');
+const geo = require('../matching/geo');
 const invoices = require('../invoices/invoices.service');
 const { extensionFor } = require('../../middlewares/upload');
 const { toSkipTake, paginatedResponse } = require('../../utils/pagination');
@@ -44,19 +46,16 @@ const myJob = async (id, user, status, hint) => {
   return booking;
 };
 
-// Jobs a vendor may take: every confirmed booking nobody has taken yet.
-// For now there is no matching on the vendor's services or city — any
-// approved vendor sees and can accept any open order.
-const availableWhere = () => ({
-  status: { in: OPEN_FOR_VENDORS },
-  professionalId: null,
-});
+// Jobs a vendor may take (see modules/matching): those offered to them by
+// nearby dispatch, plus any opened to everyone because nobody nearby took them.
+const availableWhere = (vendor) => matching.availableWhereFor(vendor.id);
 
 const availableInclude = { category: { select: { id: true, name: true, tier: true } }, city: { select: { id: true, name: true } }, zone: { select: { id: true, name: true } } };
 
 // What a vendor sees before taking a job: enough to decide, not the
-// customer's name, phone or exact address.
-const availableView = (booking) => ({
+// customer's name, phone or exact address. `offer` is set when the job was
+// offered to this vendor (answer before expiresAt); `openToAll` when anyone may take it.
+const availableView = (booking, offer = null, vendor = null) => ({
   id: booking.id,
   bookingNumber: bookingNumber(booking.sequence),
   service: booking.category,
@@ -65,8 +64,16 @@ const availableView = (booking) => ({
   price: booking.price === null ? null : Number(booking.price),
   paymentMode: booking.paymentMode,
   area: { city: booking.city, zone: booking.zone, pincode: booking.pincode },
+  distanceKm: offer?.distanceKm !== undefined && offer?.distanceKm !== null ? Number(offer.distanceKm) : vendor ? geo.distanceKm(vendor.lastLatitude, vendor.lastLongitude, booking.latitude, booking.longitude) : null,
+  offer: offer ? { expiresAt: offer.expiresAt, wave: offer.wave } : null,
+  openToAll: Boolean(booking.openToAllAt),
   createdAt: booking.createdAt,
 });
+
+const offersFor = async (vendorId, bookingIds) => {
+  const offers = await prisma.jobOffer.findMany({ where: { professionalId: vendorId, bookingId: { in: bookingIds }, status: 'OFFERED', expiresAt: { gt: new Date() } } });
+  return new Map(offers.map((offer) => [offer.bookingId, offer]));
+};
 
 const listAvailable = async (user, { page, limit }) => {
   const vendor = await approvedVendor(user);
@@ -75,14 +82,15 @@ const listAvailable = async (user, { page, limit }) => {
     prisma.booking.findMany({ where, ...toSkipTake({ page, limit }), orderBy: [{ scheduledAt: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }], include: availableInclude }),
     prisma.booking.count({ where }),
   ]);
-  return paginatedResponse(rows.map(availableView), total, { page, limit });
+  const offers = await offersFor(vendor.id, rows.map((row) => row.id));
+  return paginatedResponse(rows.map((row) => availableView(row, offers.get(row.id), vendor)), total, { page, limit });
 };
 
 const getAvailable = async (user, id) => {
   const vendor = await approvedVendor(user);
   const booking = await prisma.booking.findFirst({ where: { id, ...availableWhere(vendor) }, include: availableInclude });
   if (!booking) throw ApiError.notFound('This job is no longer available');
-  return availableView(booking);
+  return availableView(booking, (await offersFor(vendor.id, [id])).get(id), vendor);
 };
 
 // First vendor to accept gets the job; the customer is given the start code.
@@ -98,6 +106,7 @@ const accept = async (user, id) => {
     });
     if (count === 0) throw ApiError.conflict('Another vendor just took this job');
     await event(tx, id, user, { type: 'ASSIGNED', fromStatus: booking.status, toStatus: 'ASSIGNED', note: 'Accepted by the vendor' });
+    await matching.settleOnAccept(tx, id, vendor.id);
   });
 
   notify(booking.customerId, 'Professional assigned', `${vendor.user.name} will do your job. Share the start code in the app when they arrive.`, { ...booking, status: 'ASSIGNED' });
@@ -197,4 +206,6 @@ const complete = async (user, id) => {
   return detail(id, user);
 };
 
-module.exports = { MAX_IMAGES, listAvailable, getAvailable, accept, start, verifyCompletionOtp, addImages, removeImage, openImage, complete };
+const decline = async (user, id) => matching.decline(user, id);
+
+module.exports = { MAX_IMAGES, listAvailable, getAvailable, accept, decline, start, verifyCompletionOtp, addImages, removeImage, openImage, complete };

@@ -5,6 +5,7 @@
 // candidate). Do not reach into other modules' tables from outside here —
 // only via Prisma models that mirror what would be cross-service calls.
 const { jobOtp } = require('../bookings/bookings.service');
+const matching = require('../matching/matching.service');
 
 const prisma = require('../../config/prisma');
 const ApiError = require('../../utils/ApiError');
@@ -66,6 +67,8 @@ const assign = async (bookingId, professionalId, actor) => {
       where: { id: bookingId },
       data: { professionalId, status: 'ASSIGNED', assignedAt: new Date(), startOtp: jobOtp(), startOtpAttempts: 0 },
     });
+    // Assigned by the team: nearby offers still out are withdrawn.
+    await matching.withdrawAll(bookingId, tx);
     await tx.bookingEvent.create({
       data: { bookingId, type: 'ASSIGNED', actorId: actor?.id ?? null, actorRole: actor ? 'ADMIN' : 'SYSTEM', fromStatus: booking.status, toStatus: 'ASSIGNED' },
     });

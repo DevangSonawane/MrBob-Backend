@@ -2,6 +2,7 @@ const prisma = require('../../config/prisma');
 const ApiError = require('../../utils/ApiError');
 const addresses = require('../users/addresses.service');
 const dispatch = require('../dispatch/dispatch.service');
+const matching = require('../matching/matching.service');
 const bookings = require('./bookings.service');
 
 // A booking made by the team from the web dashboard, for a customer who
@@ -88,6 +89,7 @@ const create = async (actor, body) => {
   });
 
   if (body.professionalId) await dispatch.assign(created.id, body.professionalId, actor);
+  else matching.startSoon(created.id);
   const booking = await load(created.id);
   notify(customer.id, 'Booking confirmed', `Your ${category.name} booking ${bookings.bookingNumber(booking.sequence)} is confirmed.`, booking);
   return detail(created.id, actor);

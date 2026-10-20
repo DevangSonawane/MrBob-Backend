@@ -1,3 +1,7 @@
+// These suites test the job flow itself, with every open job visible to every
+// approved vendor; nearby (H3) dispatch has its own tests in matching.test.js.
+process.env.DISPATCH_MODE = 'all';
+
 const request = require('supertest');
 const app = require('../src/app');
 const prisma = require('../src/config/prisma');

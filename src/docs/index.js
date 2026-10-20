@@ -10,6 +10,7 @@ const sections = [
   require('./paths/bookings'), // service catalogue, booking flow, admin bookings, dispatch
   require('./paths/vendorOnboarding'),
   require('./paths/account'), // the customer app's and the vendor app's profile and bookings
+  require('./paths/matching'), // nearby (H3) dispatch: vendor presence, customer nearby count, admin map
   require('./paths/vendorJobs'), // the vendor's job flow, wallet, and the team's payouts
   require('./paths/disputes'), // help & disputes: both apps and the support team
   require('./paths/invoices'), // customer invoices for completed bookings

@@ -67,6 +67,13 @@ const envSchema = z.object({
   PAYOUT_HOLD_DAYS: z.coerce.number().min(0).max(60).default(2),
   PLATFORM_COMMISSION_PERCENT: z.coerce.number().min(0).max(100).default(0),
 
+  // Finding a vendor for a booking (modules/matching). 'nearby': offer each job
+  // to the nearest online vendors in widening H3 rings, then to everyone if
+  // nobody nearby takes it. 'all': every approved vendor sees every open job.
+  DISPATCH_MODE: z.enum(['nearby', 'all']).default('nearby'),
+  DISPATCH_OFFER_SECONDS: z.coerce.number().int().min(15).max(600).default(60),
+  DISPATCH_WAVE_SIZE: z.coerce.number().int().min(1).max(50).default(5),
+
   // Printed on customer invoices.
   INVOICE_BUSINESS_NAME: z.string().default('Mr Bob Home Services'),
   INVOICE_BUSINESS_ADDRESS: z.string().optional(),

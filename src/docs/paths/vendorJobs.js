@@ -39,6 +39,9 @@ const availableJob = {
     price: { ...amount('What the customer pays, in rupees'), nullable: true },
     paymentMode: { type: 'string', enum: ['ONLINE', 'PAY_AFTER_SERVICE'] },
     area: { type: 'object', properties: { city: { type: 'object', nullable: true }, zone: { type: 'object', nullable: true }, pincode: { type: 'string', nullable: true } } },
+    distanceKm: { type: 'number', nullable: true, example: 1.4, description: 'How far the job is from the vendor\'s last position' },
+    offer: { type: 'object', nullable: true, description: 'Set when this job was offered to the vendor: accept before expiresAt', properties: { expiresAt: dateTime, wave: { type: 'integer' } } },
+    openToAll: { type: 'boolean', description: 'Nobody nearby took it (or it has no location), so any approved vendor may' },
     createdAt: dateTime,
   },
 };
@@ -51,6 +54,9 @@ const availableExample = {
   price: base.price,
   paymentMode: 'ONLINE',
   area: { city: base.address.city, zone: base.address.zone, pincode: base.address.pincode },
+  distanceKm: 1.4,
+  offer: { expiresAt: '2026-10-21T10:01:00.000Z', wave: 1 },
+  openToAll: false,
   createdAt: base.createdAt,
 };
 
@@ -257,7 +263,10 @@ module.exports = {
       get: op({
         tag: JOBS,
         summary: 'Step 1 — jobs I can take',
-        description: 'Every confirmed booking nobody has taken yet, soonest first. For now there is no matching on the vendor\'s services or city: any approved vendor sees and can accept any open order. An online booking appears once it is paid.',
+        description:
+          'The jobs this vendor can take, soonest first: jobs **offered** to them by nearby dispatch (`offer` is set — accept before `offer.expiresAt`), ' +
+          'and jobs **open to all** (`openToAll`) because nobody nearby took them or they have no location. Go online with `PUT /vendor/presence` ' +
+          'to be offered jobs; poll this list every few seconds while online. An online-payment booking appears once it is paid.',
         access: 'PROFESSIONAL',
         params: pageParams,
         responses: { 200: paginated('A page of open jobs', availableJob) },
