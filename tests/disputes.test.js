@@ -156,3 +156,36 @@ describe('Help & disputes', () => {
     expect(detail.body.data.booking).toBeNull();
   });
 });
+
+describe('Dashboard overview and analytics', () => {
+  let admin;
+  let customer;
+  beforeAll(async () => {
+    const tag = Date.now().toString(36);
+    admin = await prisma.user.create({ data: { name: `dash-admin ${tag}`, email: `dash-admin-${tag}@example.com`, role: 'ADMIN' } });
+    customer = await prisma.user.create({ data: { name: `dash-customer ${tag}`, email: `dash-customer-${tag}@example.com`, role: 'CUSTOMER' } });
+  });
+  afterAll(() => prisma.user.deleteMany({ where: { id: { in: [admin.id, customer.id] } } }));
+  const auth = (user) => ({ Authorization: `Bearer ${issueTokenPair(user).accessToken}` });
+
+  it('gives the home page its numbers from real data', async () => {
+    expect((await request(app).get(`${API}/dashboard/overview`).set(auth(customer))).status).toBe(403);
+    const res = await request(app).get(`${API}/dashboard/overview?months=3`).set(auth(admin));
+    expect(res.status).toBe(200);
+    expect(res.body.data.trend).toHaveLength(3);
+    expect(res.body.data.bookings.total).toBe(await prisma.booking.count());
+    expect(Array.isArray(res.body.data.byService)).toBe(true);
+    expect((await request(app).get(`${API}/dashboard/overview?months=5`).set(auth(admin))).status).toBe(400);
+  });
+
+  it('analyses bookings and vendors over a period', async () => {
+    const bookings = await request(app).get(`${API}/dashboard/analytics?type=bookings&months=12`).set(auth(admin));
+    expect(bookings.body.data).toMatchObject({ type: 'bookings', months: 12, totals: { bookings: expect.any(Number), completionRate: expect.any(Number) } });
+    expect(bookings.body.data.trend).toHaveLength(12);
+    expect(bookings.body.data.byStatus.map((row) => row.id)).toContain('COMPLETED');
+
+    const vendors = await request(app).get(`${API}/dashboard/analytics?type=vendors&months=6`).set(auth(admin));
+    expect(vendors.body.data).toMatchObject({ type: 'vendors', totals: { vendors: expect.any(Number), approvalRate: expect.any(Number) } });
+    expect(Array.isArray(vendors.body.data.serviceCoverage)).toBe(true);
+  });
+});
