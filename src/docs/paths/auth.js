@@ -117,12 +117,27 @@ module.exports = {
     '/auth/refresh': {
       post: op({
         tag: TAG,
-        summary: 'Exchange a refresh token for a new token pair',
-        description: 'Returns **401** if the refresh token is invalid or expired, or the account is no longer active.',
+        summary: 'Get a new access token',
+        description:
+          'Call this when a request fails with **401** and `details.code` `TOKEN_EXPIRED` (or a little before `accessTokenExpiresIn` runs out), ' +
+          'then retry the request with the new access token. The refresh token stays the same and is extended for another 30 days, so a ' +
+          'device in regular use stays signed in.\n\n' +
+          'Returns **401** with `details.code` `SESSION_EXPIRED` when the refresh token was not used for 30 days, the device signed out, or the ' +
+          'account was deactivated or deleted — send the user to sign in again. Refresh tokens issued before 21 Oct 2026 still work once.',
         access: 'public',
         body: jsonBody({ type: 'object', required: ['refreshToken'], properties: { refreshToken: { type: 'string' } } }, { refreshToken: examples.tokens.refreshToken }),
-        responses: { 200: ok('New tokens', ref('AuthTokens'), examples.tokens) },
+        responses: { 200: ok('A new access token (and the same refresh token)', ref('AuthTokens'), examples.tokens) },
         errors: [401],
+      }),
+    },
+    '/auth/logout': {
+      post: op({
+        tag: TAG,
+        summary: 'Sign this device out',
+        description: 'The refresh token stops working. The current access token still works until it expires (at most `accessTokenExpiresIn`). Always succeeds.',
+        access: 'public',
+        body: jsonBody({ type: 'object', required: ['refreshToken'], properties: { refreshToken: { type: 'string' } } }, { refreshToken: examples.tokens.refreshToken }),
+        responses: { 200: ok('Signed out', { type: 'object', properties: { signedOut: { type: 'boolean' } } }, { signedOut: true }) },
       }),
     },
     '/auth/me': {

@@ -32,6 +32,7 @@ module.exports = {
       '**Conventions**',
       '- Successful responses are `{ "success": true, "data": … }`; list endpoints return `{ "success": true, "items": […], "meta": { page, limit, total, totalPages } }`.',
       '- Errors are `{ "success": false, "message": "…", "details": … }` with a matching HTTP status.',
+      '- **Tokens:** on **401** with `details.code` `TOKEN_EXPIRED`, call `POST /auth/refresh` with the refresh token and retry once; on `SESSION_EXPIRED` or `TOKEN_INVALID`, sign the user in again. Every sign-in also returns `accessTokenExpiresIn` (seconds).',
       '- Protected endpoints need `Authorization: Bearer <accessToken>`. Click **Authorize** and paste an access token to try them here.',
       '- Each endpoint states who may call it under **Access**. A super admin may call anything an admin may.',
       '',

@@ -2,8 +2,8 @@ const bcrypt = require('bcryptjs');
 const prisma = require('../../config/prisma');
 const ApiError = require('../../utils/ApiError');
 const otpStore = require('./otp.store');
+const sessions = require('./session.service');
 const notificationsService = require('../notifications/notifications.service');
-const { issueTokenPair, verifyRefreshToken } = require('./token.util');
 const env = require('../../config/env');
 const { isAdmin } = require('../../utils/roles');
 
@@ -47,7 +47,7 @@ const verifyOtpAndLogin = async (phone, otp, name) => {
   }
 
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-  const tokens = issueTokenPair(user);
+  const tokens = await sessions.start(user);
   return { user, ...tokens };
 };
 
@@ -62,7 +62,7 @@ const verifyVendorOtp = async (phone, otp) => {
   if (!user.isActive) throw ApiError.forbidden('This account has been deactivated');
 
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-  return { user, ...issueTokenPair(user) };
+  return { user, ...(await sessions.start(user)) };
 };
 
 const signupWithEmail = async ({ name, email, password, phone }) => {
@@ -83,7 +83,7 @@ const signupWithEmail = async ({ name, email, password, phone }) => {
     data: { name, email, phone, passwordHash, role: 'CUSTOMER' },
   });
 
-  const tokens = issueTokenPair(user);
+  const tokens = await sessions.start(user);
   return { user, ...tokens };
 };
 
@@ -103,25 +103,13 @@ const loginWithEmail = async (email, password) => {
   }
 
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-  const tokens = issueTokenPair(user);
+  const tokens = await sessions.start(user);
   return { user, ...tokens };
 };
 
-const refreshTokens = async (refreshToken) => {
-  let payload;
-  try {
-    payload = verifyRefreshToken(refreshToken);
-  } catch {
-    throw ApiError.unauthorized('Invalid or expired refresh token');
-  }
+const refreshTokens = (refreshToken) => sessions.refresh(refreshToken);
 
-  const user = await prisma.user.findUnique({ where: { id: payload.sub } });
-  if (!user || !user.isActive) {
-    throw ApiError.unauthorized('Account no longer active');
-  }
-
-  return issueTokenPair(user);
-};
+const logout = (refreshToken) => sessions.end(refreshToken);
 
 const getProfile = async (userId) => {
   const user = await prisma.user.findUnique({
@@ -139,5 +127,6 @@ module.exports = {
   signupWithEmail,
   loginWithEmail,
   refreshTokens,
+  logout,
   getProfile,
 };

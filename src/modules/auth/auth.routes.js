@@ -18,6 +18,8 @@ router.post('/signup', validate(schema.signup), controller.signup);
 router.post('/login', validate(schema.login), controller.login);
 
 router.post('/refresh', validate(schema.refresh), controller.refresh);
+// Signs this device out: its refresh token stops working.
+router.post('/logout', validate(schema.refresh), controller.logout);
 
 router.get('/me', authenticate, controller.me);
 

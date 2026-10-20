@@ -6,7 +6,7 @@ const { isSuperAdmin } = require('../utils/roles');
 const authenticate = (req, res, next) => {
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) {
-    return next(ApiError.unauthorized('Missing bearer token'));
+    return next(ApiError.unauthorized('Missing bearer token', { code: 'TOKEN_MISSING' }));
   }
 
   const token = header.slice('Bearer '.length);
@@ -15,8 +15,9 @@ const authenticate = (req, res, next) => {
     const payload = jwt.verify(token, env.JWT_ACCESS_SECRET);
     req.user = { id: payload.sub, role: payload.role };
     next();
-  } catch {
-    next(ApiError.unauthorized('Invalid or expired token'));
+  } catch (err) {
+    // TOKEN_EXPIRED: the app should call POST /auth/refresh and retry. TOKEN_INVALID: sign in again.
+    next(err.name === 'TokenExpiredError' ? ApiError.unauthorized('Access token expired', { code: 'TOKEN_EXPIRED' }) : ApiError.unauthorized('Invalid token', { code: 'TOKEN_INVALID' }));
   }
 };
 

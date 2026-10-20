@@ -13,7 +13,7 @@ const notifications = require('../notifications/notifications.service');
 const kycVerification = require('./kycVerification.service');
 const { relaxed, parseLooseDate, parseLooseEnum } = require('../../utils/onboardingValidation');
 const otpStore = require('../auth/otp.store');
-const { issueTokenPair } = require('../auth/token.util');
+const sessions = require('../auth/session.service');
 
 // Vendor onboarding, as the vendor app presents it:
 //
@@ -279,7 +279,7 @@ const verifyOtp = async (phone, otp) => {
   return {
     isNewUser: !existing,
     user: { id: user.id, name: user.name, phone: user.phone, email: user.email, role: user.role, isOnboarded: user.isOnboarded },
-    ...issueTokenPair(user),
+    ...(await sessions.start(user)),
     application: await buildView(await loadByUserId(user.id)),
   };
 };

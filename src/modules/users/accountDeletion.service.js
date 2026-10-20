@@ -42,6 +42,8 @@ const deleteAccount = async (userId) => {
     });
     await tx.aMCSubscription.updateMany({ where: { customerId: userId, status: 'ACTIVE' }, data: { status: 'CANCELLED' } });
     await tx.address.deleteMany({ where: { userId } });
+    // Signed out everywhere.
+    await tx.authSession.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
 
     if (professional) {
       await tx.professionalDocument.deleteMany({ where: { professionalId: professional.id } });

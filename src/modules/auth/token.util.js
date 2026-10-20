@@ -1,8 +1,8 @@
 const jwt = require('jsonwebtoken');
 const env = require('../../config/env');
 
-const signAccessToken = (user) =>
-  jwt.sign({ sub: user.id, role: user.role }, env.JWT_ACCESS_SECRET, {
+const signAccessToken = (user, sessionId) =>
+  jwt.sign({ sub: user.id, role: user.role, ...(sessionId && { sid: sessionId }) }, env.JWT_ACCESS_SECRET, {
     expiresIn: env.JWT_ACCESS_EXPIRES_IN,
   });
 

@@ -17,33 +17,33 @@ const requestOtp = catchAsync(async (req, res) => {
 });
 
 const vendorLogin = catchAsync(async (req, res) => {
-  const { user, accessToken, refreshToken } = await authService.verifyVendorOtp(req.body.phone, req.body.otp);
-  res.status(200).json({ success: true, data: { user: toPublicUser(user), accessToken, refreshToken } });
+  const { user, ...tokens } = await authService.verifyVendorOtp(req.body.phone, req.body.otp);
+  res.status(200).json({ success: true, data: { user: toPublicUser(user), ...tokens } });
 });
 
 const verifyOtp = catchAsync(async (req, res) => {
   const { phone, otp, name } = req.body;
-  const { user, accessToken, refreshToken } = await authService.verifyOtpAndLogin(phone, otp, name);
+  const { user, ...tokens } = await authService.verifyOtpAndLogin(phone, otp, name);
   res.status(200).json({
     success: true,
-    data: { user: toPublicUser(user), accessToken, refreshToken },
+    data: { user: toPublicUser(user), ...tokens },
   });
 });
 
 const signup = catchAsync(async (req, res) => {
-  const { user, accessToken, refreshToken } = await authService.signupWithEmail(req.body);
+  const { user, ...tokens } = await authService.signupWithEmail(req.body);
   res.status(201).json({
     success: true,
-    data: { user: toPublicUser(user), accessToken, refreshToken },
+    data: { user: toPublicUser(user), ...tokens },
   });
 });
 
 const login = catchAsync(async (req, res) => {
   const { email, password } = req.body;
-  const { user, accessToken, refreshToken } = await authService.loginWithEmail(email, password);
+  const { user, ...tokens } = await authService.loginWithEmail(email, password);
   res.status(200).json({
     success: true,
-    data: { user: toPublicUser(user), accessToken, refreshToken },
+    data: { user: toPublicUser(user), ...tokens },
   });
 });
 
@@ -57,4 +57,6 @@ const me = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: sanitizeUser(user) });
 });
 
-module.exports = { requestOtp, verifyOtp, signup, login, refresh, me, vendorLogin };
+const logout = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await authService.logout(req.body.refreshToken) }));
+
+module.exports = { requestOtp, verifyOtp, signup, login, refresh, logout, me, vendorLogin };

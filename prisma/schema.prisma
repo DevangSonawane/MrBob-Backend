@@ -63,6 +63,7 @@ model User {
   verifiedDocuments     ProfessionalDocument[]  @relation("DocumentVerifier")
   onboardingEvents      VendorOnboardingEvent[] @relation("OnboardingEventActor")
   disputes              Dispute[]               @relation("DisputeRaiser")
+  authSessions          AuthSession[]
   assignedDisputes      Dispute[]               @relation("DisputeAssignee")
   disputeMessages       DisputeMessage[]
 
@@ -808,4 +809,23 @@ model Invoice {
 
   @@index([issuedAt])
   @@map("invoices")
+}
+
+// A signed-in device. The refresh token is "<session id>.<secret>"; only a
+// hash of the secret is stored. Each refresh extends it (sliding expiry);
+// logging out, deactivating or deleting the account revokes it.
+model AuthSession {
+  id         String    @id @default(uuid())
+  userId     String
+  tokenHash  String
+  userAgent  String?
+  expiresAt  DateTime
+  lastUsedAt DateTime  @default(now())
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("auth_sessions")
 }

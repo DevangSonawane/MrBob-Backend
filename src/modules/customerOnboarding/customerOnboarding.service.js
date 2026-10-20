@@ -3,7 +3,7 @@ const ApiError = require('../../utils/ApiError');
 const sanitizeUser = require('../../utils/sanitizeUser');
 const notifications = require('../notifications/notifications.service');
 const otpStore = require('../auth/otp.store');
-const { issueTokenPair } = require('../auth/token.util');
+const sessions = require('../auth/session.service');
 const addresses = require('../users/addresses.service');
 const { relaxed, parseLooseDate, parseLooseEnum } = require('../../utils/onboardingValidation');
 
@@ -109,7 +109,7 @@ const verifyOtp = async (phone, otp) => {
     include: { city: { select: { id: true, name: true } } },
   });
 
-  return { isNewUser: !existing, ...issueTokenPair(user), ...(await buildView(user)) };
+  return { isNewUser: !existing, ...(await sessions.start(user)), ...(await buildView(user)) };
 };
 
 const getStatus = async (userId) => buildView(await loadCustomer(userId));

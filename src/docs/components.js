@@ -311,7 +311,8 @@ const examples = {
   event,
   tokens: {
     accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI…',
-    refreshToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0eXBlIjoi…',
+    refreshToken: '6f1c2a9e-0b7d-4c3e-9a51-2d8e4f6a7b10.Qm9iLXNlc3Npb24tc2VjcmV0LXZhbHVl…',
+    accessTokenExpiresIn: 900,
   },
 };
 
@@ -451,8 +452,9 @@ const schemas = {
     totalPages: { type: 'integer', example: 3 },
   }),
   AuthTokens: object({
-    accessToken: str(examples.tokens.accessToken, { description: 'JWT, valid 15 minutes. Send as `Authorization: Bearer <accessToken>`.' }),
-    refreshToken: str(examples.tokens.refreshToken, { description: 'JWT, valid 30 days. Exchange at `POST /auth/refresh`.' }),
+    accessToken: str(examples.tokens.accessToken, { description: 'Short-lived JWT. Send as `Authorization: Bearer <accessToken>`.' }),
+    refreshToken: str(examples.tokens.refreshToken, { description: 'Keeps the device signed in. Exchange at `POST /auth/refresh` for a new access token; stays valid for 30 days after it was last used.' }),
+    accessTokenExpiresIn: { type: 'integer', example: 900, description: 'Seconds until the access token expires — refresh a little before then' },
   }),
   PublicUser: object({
     id: id(),
@@ -462,7 +464,7 @@ const schemas = {
     role: oneOf(ROLES, 'CUSTOMER'),
     isOnboarded: { type: 'boolean', example: false },
   }),
-  AuthSession: object({ user: ref('PublicUser'), accessToken: str(examples.tokens.accessToken), refreshToken: str(examples.tokens.refreshToken) }),
+  AuthSession: object({ user: ref('PublicUser'), accessToken: str(examples.tokens.accessToken), refreshToken: str(examples.tokens.refreshToken), accessTokenExpiresIn: { type: 'integer', example: 900 } }),
   User: object({
     id: id(),
     name: str('Aarav Mehta'),
@@ -530,6 +532,7 @@ const schemas = {
         isNewUser: { type: 'boolean', description: 'True when this phone number had no account before' },
         accessToken: str(examples.tokens.accessToken),
         refreshToken: str(examples.tokens.refreshToken),
+        accessTokenExpiresIn: { type: 'integer', example: 900 },
       }),
       ref('CustomerOnboarding'),
     ],
@@ -788,6 +791,7 @@ const schemas = {
     user: ref('PublicUser'),
     accessToken: str(examples.tokens.accessToken),
     refreshToken: str(examples.tokens.refreshToken),
+    accessTokenExpiresIn: { type: 'integer', example: 900 },
     application: ref('VendorApplication'),
   }),
   VendorStatus: object({

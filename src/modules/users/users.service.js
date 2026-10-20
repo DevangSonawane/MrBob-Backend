@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const prisma = require('../../config/prisma');
+const sessions = require('../auth/session.service');
 const ApiError = require('../../utils/ApiError');
 const { toSkipTake, paginatedResponse } = require('../../utils/pagination');
 const { isSuperAdmin } = require('../../utils/roles');
@@ -173,7 +174,10 @@ const setActive = async (id, isActive, actor) => {
   if (isSuperAdmin(user.role) && !isSuperAdmin(actor.role)) {
     throw ApiError.forbidden('Only a super admin can activate or deactivate a super admin');
   }
-  return prisma.user.update({ where: { id }, data: { isActive } });
+  const updated = await prisma.user.update({ where: { id }, data: { isActive } });
+  // A deactivated account is signed out on every device.
+  if (!isActive) await sessions.endAll(id);
+  return updated;
 };
 
 // Super admin edit of any account. Role changes are limited to moving
