@@ -557,6 +557,7 @@ model City {
   partners  Partner[]
   addresses Address[]
   bookings  Booking[]
+  pincodes  ServiceablePincode[]
 
   @@map("cities")
 }
@@ -568,13 +569,36 @@ model Zone {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  city          City           @relation(fields: [cityId], references: [id])
+  city          City                 @relation(fields: [cityId], references: [id])
   professionals Professional[]
   addresses     Address[]
   bookings      Booking[]
+  pincodes      ServiceablePincode[]
 
   @@index([cityId])
   @@map("zones")
+}
+
+// The geofence: the pincodes the service is offered in. A pincode is
+// serviceable while it, its city and (if set) its zone are all active.
+// Addresses outside it can still be saved, but cannot be booked once
+// PINCODE_GEOFENCE is 'strict' (see zones/serviceability.service.js).
+model ServiceablePincode {
+  id        String   @id @default(uuid())
+  pincode   String   @unique
+  cityId    String
+  zoneId    String? // the zone jobs here belong to; filled in on addresses saved without one
+  areaName  String? // locality name shown to customers, e.g. "Koramangala 4th Block"
+  isActive  Boolean  @default(true) // switch off to pause bookings here without losing the row
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  city City  @relation(fields: [cityId], references: [id])
+  zone Zone? @relation(fields: [zoneId], references: [id])
+
+  @@index([cityId])
+  @@index([zoneId])
+  @@map("serviceable_pincodes")
 }
 
 // ---------------------------------------------------------------------------

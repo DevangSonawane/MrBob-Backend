@@ -31,6 +31,12 @@ async function main() {
     await prisma.zone.createMany({ data: missingZones.map((name) => ({ cityId: mumbai.id, name })) });
   }
 
+  // The pincode geofence: the Koramangala pincodes, so bookings work out of the box with PINCODE_GEOFENCE=strict.
+  // Add the rest from the dashboard (Service coverage → Pincodes).
+  for (const pincode of ['560034', '560095']) {
+    await prisma.serviceablePincode.upsert({ where: { pincode }, update: {}, create: { pincode, cityId: city.id, zoneId: zone.id, areaName: 'Koramangala' } });
+  }
+
   const categories = [
     { name: 'Electrician', tier: 'REPAIR', basePrice: 299 },
     { name: 'Plumber', tier: 'REPAIR', basePrice: 349 },

@@ -1,5 +1,6 @@
 const catchAsync = require('../../utils/catchAsync');
 const service = require('./zones.service');
+const pincodes = require('./serviceability.service');
 
 const listCities = catchAsync(async (req, res) => {
   const cities = await service.listCities();
@@ -25,4 +26,14 @@ const removeCity = catchAsync(async (req, res) => res.status(200).json({ success
 
 const removeZone = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await service.removeZone(req.params.id) }));
 
-module.exports = { removeCity, removeZone, listCities, createCity, listZones, createZone };
+const checkPincode = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await pincodes.check(req.query.pincode) }));
+
+const listPincodes = catchAsync(async (req, res) => res.status(200).json({ success: true, ...(await pincodes.list(req.query)) }));
+
+const addPincodes = catchAsync(async (req, res) => res.status(201).json({ success: true, data: await pincodes.add(req.body) }));
+
+const updatePincode = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await pincodes.update(req.params.id, req.body) }));
+
+const removePincode = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await pincodes.remove(req.params.id) }));
+
+module.exports = { removeCity, removeZone, listCities, createCity, listZones, createZone, checkPincode, listPincodes, addPincodes, updatePincode, removePincode };

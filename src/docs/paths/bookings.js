@@ -122,7 +122,9 @@ module.exports = {
           '- `PAY_AFTER_SERVICE`: the booking is `PENDING` (confirmed) straight away. Nothing more to do.\n' +
           '- `ONLINE`: the booking is `AWAITING_PAYMENT` and `checkout` holds the gateway order. Open Razorpay Checkout with it, then call ' +
           '**Confirm online payment**. The booking is not sent to professionals until it is paid.\n\n' +
-          'Returns **400** if the customer has no saved address, the service is inactive, or the time is out of range; **503** if online ' +
+          'Returns **400** if the customer has no saved address, the service is inactive, or the time is out of range, and — while the pincode ' +
+          'geofence is on — with `details.code` `PINCODE_NOT_SERVICEABLE` if the address\'s pincode is not one we serve (check `serviceable` on ' +
+          'the address first); **503** if online ' +
           'payment is chosen but the server has no payment gateway configured.',
         access: 'CUSTOMER',
         body: jsonBody(
@@ -195,7 +197,9 @@ module.exports = {
           'that number. Send **either** `addressId` (one of that customer\'s addresses) **or** `address` (saved to their addresses).\n\n' +
           'The booking is `PENDING` and paid after the service. `price` defaults to the service\'s base price. With `professionalId` an approved ' +
           'vendor offering the service is assigned straight away (the booking is `ASSIGNED` and the customer sees the start code). Any time in ' +
-          'the future, up to 60 days ahead. The customer is notified.',
+          'the future, up to 60 days ahead. The customer is notified.\n\n' +
+          'While the pincode geofence is on, an address outside it is refused with **400** and `details.code` `PINCODE_NOT_SERVICEABLE` ' +
+          '(before any new customer or address is saved).',
         access: 'ADMIN',
         body: jsonBody(
           {

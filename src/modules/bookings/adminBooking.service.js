@@ -4,6 +4,7 @@ const addresses = require('../users/addresses.service');
 const dispatch = require('../dispatch/dispatch.service');
 const matching = require('../matching/matching.service');
 const bookings = require('./bookings.service');
+const pincodes = require('../zones/serviceability.service');
 
 // A booking made by the team from the web dashboard, for a customer who
 // called or walked in. The customer can be an existing one or a new one
@@ -49,12 +50,15 @@ const create = async (actor, body) => {
     if (!vendor.categories.includes(body.categoryId)) throw ApiError.badRequest('That vendor does not offer this service');
   }
 
+  // A new address is checked first, so a refused booking leaves no new customer or address behind.
+  if (!body.addressId) await pincodes.assertBookable(body.address.pincode);
   const { user: customer } = await findOrCreateCustomer(body);
 
   let address;
   if (body.addressId) {
     address = await prisma.address.findFirst({ where: { id: body.addressId, userId: customer.id } });
     if (!address) throw ApiError.badRequest('That address does not belong to this customer');
+    await pincodes.assertBookable(address.pincode);
   } else {
     // Saved to the customer's addresses, so it is there next time too.
     const saved = await addresses.create(customer.id, { ...body.address, label: body.address.label ?? 'HOME' });

@@ -1,3 +1,4 @@
+const env = require('../../config/env');
 const { ref, arrayOf, ok, paginated, jsonBody, pathParam, queryParam, pageParams, op } = require('../helpers');
 
 const ZONES = 'Cities & zones';
@@ -7,7 +8,15 @@ const point = { type: 'object', properties: { id: { type: 'string', nullable: tr
 
 module.exports = {
   tags: [
-    { name: ZONES, description: 'Where the service operates. Cities contain zones; a vendor picks a city and a home zone during onboarding.' },
+    {
+      name: ZONES,
+      description:
+        'Where the service operates. Cities contain zones; a vendor picks a city and a home zone during onboarding.\n\n' +
+        '**Pincode geofence** — the team lists the pincodes it serves (`/zones/pincodes`). The customer app can check a pincode before ' +
+        '(or while) adding an address with `GET /zones/serviceability`, and every saved address carries `serviceable`. Saving an address ' +
+        'outside the area is allowed; booking there is refused with **400** and `details.code` `PINCODE_NOT_SERVICEABLE` ' +
+        `${env.PINCODE_GEOFENCE === 'strict' ? '(**on** on this server)' : '(**switched off on this server**: `PINCODE_GEOFENCE=off`, so bookings are not refused yet)'}.`,
+    },
     { name: PARTNERS, description: 'Builders and resident welfare associations that send bookings.' },
     { name: DASHBOARD, description: 'Aggregates for the admin dashboard.' },
   ],
@@ -70,6 +79,104 @@ module.exports = {
         ),
         responses: { 201: ok('Zone created', ref('Zone')) },
         errors: [404, 409],
+      }),
+    },
+    '/zones/serviceability': {
+      get: op({
+        tag: ZONES,
+        summary: 'Is this pincode served?',
+        description:
+          'For the customer app\'s address screen: tells the customer straight away whether we serve their pincode, and which city and zone it is in. ' +
+          'Unknown, paused, or in a city or zone taken out of service: `serviceable: false` and the rest null.',
+        access: 'public',
+        params: [{ ...queryParam('pincode', '6-digit pincode', { type: 'string', pattern: '^[1-9]\\d{5}$' }), required: true }],
+        responses: {
+          200: ok('Whether the pincode is served', ref('PincodeCheck'), {
+            pincode: '560034',
+            serviceable: true,
+            city: { id: '0d9b7a3c-1111-4a2b-9c3d-4e5f6a7b8c9d', name: 'Bengaluru' },
+            zone: { id: '7a6b5c4d-3333-4e2f-9a1b-0c9d8e7f6a5b', name: 'Koramangala' },
+            areaName: 'Koramangala',
+          }),
+        },
+      }),
+    },
+    '/zones/pincodes': {
+      get: op({
+        tag: ZONES,
+        summary: 'List serviceable pincodes',
+        description: 'Every pincode in the geofence, active or paused, by pincode.',
+        access: 'ADMIN',
+        params: [
+          queryParam('cityId', 'Only this city', { type: 'string', format: 'uuid' }),
+          queryParam('zoneId', 'Only this zone', { type: 'string', format: 'uuid' }),
+          queryParam('isActive', 'true = only active, false = only paused', { type: 'string', enum: ['true', 'false'] }),
+          queryParam('search', 'Pincode prefix (e.g. `5600`) or part of the area name'),
+          ...pageParams,
+        ],
+        responses: { 200: paginated('A page of pincodes', ref('ServiceablePincode')) },
+      }),
+      post: op({
+        tag: ZONES,
+        summary: 'Add pincodes',
+        description:
+          'Adds one or many pincodes to a city (and optionally a zone). `pincodes` is an array, or a pasted list separated by commas, spaces or ' +
+          'new lines (up to 500). A pincode already listed is moved to this city/zone and switched back on, so sending a list twice is safe.\n\n' +
+          'Addresses saved later without a zone take the zone of their pincode.',
+        access: 'ADMIN',
+        body: jsonBody(
+          {
+            type: 'object',
+            required: ['cityId', 'pincodes'],
+            properties: {
+              cityId: { type: 'string', format: 'uuid' },
+              zoneId: { type: 'string', format: 'uuid', nullable: true },
+              areaName: { type: 'string', maxLength: 120, nullable: true },
+              pincodes: { oneOf: [{ type: 'array', items: { type: 'string', pattern: '^[1-9]\\d{5}$' } }, { type: 'string', description: 'Comma, space or newline separated' }] },
+            },
+          },
+          { cityId: '0d9b7a3c-1111-4a2b-9c3d-4e5f6a7b8c9d', zoneId: '7a6b5c4d-3333-4e2f-9a1b-0c9d8e7f6a5b', areaName: 'Koramangala', pincodes: ['560034', '560095'] },
+        ),
+        responses: {
+          201: ok(
+            'Added',
+            { type: 'object', properties: { added: { type: 'integer' }, updated: { type: 'integer' }, items: arrayOf(ref('ServiceablePincode')) } },
+            { added: 1, updated: 0, items: [{ id: '9c8b7a6d-4444-4f3e-8a2b-1c0d9e8f7a6b', pincode: '560034', cityId: '0d9b7a3c-1111-4a2b-9c3d-4e5f6a7b8c9d', zoneId: '7a6b5c4d-3333-4e2f-9a1b-0c9d8e7f6a5b', areaName: 'Koramangala', isActive: true, serviceable: true, city: { id: '0d9b7a3c-1111-4a2b-9c3d-4e5f6a7b8c9d', name: 'Bengaluru' }, zone: { id: '7a6b5c4d-3333-4e2f-9a1b-0c9d8e7f6a5b', name: 'Koramangala' }, createdAt: '2026-10-28T09:30:00.000Z', updatedAt: '2026-10-28T09:30:00.000Z' }] },
+          ),
+        },
+      }),
+    },
+    '/zones/pincodes/{id}': {
+      patch: op({
+        tag: ZONES,
+        summary: 'Edit or pause a pincode',
+        description: '`isActive: false` pauses bookings in the pincode without removing it. Moving it to another city drops its zone unless one is sent.',
+        access: 'ADMIN',
+        params: [pathParam('id', 'Pincode row id')],
+        body: jsonBody(
+          {
+            type: 'object',
+            minProperties: 1,
+            properties: {
+              cityId: { type: 'string', format: 'uuid' },
+              zoneId: { type: 'string', format: 'uuid', nullable: true },
+              areaName: { type: 'string', maxLength: 120, nullable: true },
+              isActive: { type: 'boolean' },
+            },
+          },
+          { isActive: false },
+        ),
+        responses: { 200: ok('Updated', ref('ServiceablePincode'), { ...{ id: '9c8b7a6d-4444-4f3e-8a2b-1c0d9e8f7a6b', pincode: '560034', cityId: '0d9b7a3c-1111-4a2b-9c3d-4e5f6a7b8c9d', zoneId: '7a6b5c4d-3333-4e2f-9a1b-0c9d8e7f6a5b', areaName: 'Koramangala', isActive: true, serviceable: true, city: { id: '0d9b7a3c-1111-4a2b-9c3d-4e5f6a7b8c9d', name: 'Bengaluru' }, zone: { id: '7a6b5c4d-3333-4e2f-9a1b-0c9d8e7f6a5b', name: 'Koramangala' }, createdAt: '2026-10-28T09:30:00.000Z', updatedAt: '2026-10-28T09:30:00.000Z' }, isActive: false, serviceable: false }) },
+        errors: [404],
+      }),
+      delete: op({
+        tag: ZONES,
+        summary: 'Remove a pincode',
+        description: 'Takes the pincode out of the geofence. Existing bookings there are not affected.',
+        access: 'ADMIN',
+        params: [pathParam('id', 'Pincode row id')],
+        responses: { 200: ok('Removed', { type: 'object', properties: { deleted: { type: 'boolean', example: true }, pincode: { type: 'string' } } }) },
+        errors: [404],
       }),
     },
     '/partners': {

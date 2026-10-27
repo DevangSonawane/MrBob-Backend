@@ -53,6 +53,12 @@ const envSchema = z.object({
   // See utils/onboardingValidation.js for exactly what each mode does.
   ONBOARDING_VALIDATION: z.enum(['off', 'strict']).default('off'),
 
+  // Pincode geofence (zones/serviceability.service.js). 'strict': a booking can
+  // only be made at an address whose pincode is a serviceable one. 'off': every
+  // address can be booked; addresses still report whether they are serviceable.
+  // Load the pincodes from the dashboard first, then switch it to 'strict'.
+  PINCODE_GEOFENCE: z.enum(['off', 'strict']).default('off'),
+
   // KYC: 32-byte key (base64 or hex) for encrypting Aadhaar/PAN numbers at rest.
   // Optional in dev/test (a fixed insecure key is used); required in production
   // before any document can be saved — see utils/kycCrypto.js.

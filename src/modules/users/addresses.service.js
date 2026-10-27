@@ -1,5 +1,6 @@
 const prisma = require('../../config/prisma');
 const ApiError = require('../../utils/ApiError');
+const pincodes = require('../zones/serviceability.service');
 
 // A user's saved addresses. Invariant: if a user has any addresses, exactly
 // one is the default, and the user's cityId / one-line `address` mirror it.
@@ -8,11 +9,25 @@ const MAX_ADDRESSES = 10;
 
 const addressInclude = { city: { select: { id: true, name: true } }, zone: { select: { id: true, name: true } } };
 
-const toView = ({ cityId: _cityId, zoneId: _zoneId, userId: _userId, latitude, longitude, ...address }) => ({
+// `serviceable`: the pincode is inside the geofence, so the address can be booked.
+const toView = ({ cityId: _cityId, zoneId: _zoneId, userId: _userId, latitude, longitude, ...address }, serviceable = new Set()) => ({
   ...address,
   latitude: latitude === null ? null : Number(latitude),
   longitude: longitude === null ? null : Number(longitude),
+  serviceable: serviceable.has(address.pincode),
 });
+
+// An address saved without a zone takes the one its pincode belongs to, and
+// so does one whose pincode changes without a zone being chosen with it.
+const withPincodeZone = async (data, existing = {}) => {
+  const zoneId = data.zoneId === undefined ? existing.zoneId : data.zoneId;
+  const pincode = data.pincode ?? existing.pincode;
+  const cityId = data.cityId ?? existing.cityId;
+  const movedPincode = data.pincode !== undefined && data.pincode !== existing.pincode && data.zoneId === undefined;
+  if ((zoneId && !movedPincode) || !pincode || !cityId) return data;
+  const zoneFromPincode = await pincodes.zoneFor(pincode, cityId);
+  return zoneFromPincode ? { ...data, zoneId: zoneFromPincode } : data;
+};
 
 const oneLine = (address) =>
   [address.line1, address.line2, address.landmark, address.city?.name, `${address.state} ${address.pincode}`.trim()].filter(Boolean).join(', ');
@@ -53,18 +68,21 @@ const list = async (userId) => {
     orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
     include: addressInclude,
   });
-  return addresses.map(toView);
+  const serviceable = await pincodes.serviceableSet(addresses.map((address) => address.pincode));
+  return addresses.map((address) => toView(address, serviceable));
 };
 
 const getOne = async (userId, id) => {
   await findOwn(userId, id);
-  return toView(await prisma.address.findUnique({ where: { id }, include: addressInclude }));
+  const address = await prisma.address.findUnique({ where: { id }, include: addressInclude });
+  return toView(address, await pincodes.serviceableSet([address.pincode]));
 };
 
 // `unchecked` (onboarding with validation off) skips the city/zone rules; the
 // caller has already made sure the ids exist.
-const create = async (userId, { isDefault, ...data }, { unchecked = false } = {}) => {
-  if (!unchecked) await assertPlace(data.cityId, data.zoneId);
+const create = async (userId, { isDefault, ...fields }, { unchecked = false } = {}) => {
+  if (!unchecked) await assertPlace(fields.cityId, fields.zoneId);
+  const data = await withPincodeZone(fields);
   const count = await prisma.address.count({ where: { userId } });
   if (count >= MAX_ADDRESSES) throw ApiError.badRequest(`You can save up to ${MAX_ADDRESSES} addresses`);
 
@@ -86,9 +104,10 @@ const update = async (userId, id, { isDefault, ...data }, { unchecked = false } 
     await assertPlace(data.cityId ?? existing.cityId, data.zoneId === undefined ? existing.zoneId : data.zoneId);
   }
 
+  const changes = await withPincodeZone(data, existing);
   await prisma.$transaction(async (tx) => {
     if (isDefault === true) await tx.address.updateMany({ where: { userId }, data: { isDefault: false } });
-    await tx.address.update({ where: { id }, data: { ...data, ...(isDefault === true && { isDefault: true }) } });
+    await tx.address.update({ where: { id }, data: { ...changes, ...(isDefault === true && { isDefault: true }) } });
     await syncDefault(tx, userId);
   });
   return getOne(userId, id);

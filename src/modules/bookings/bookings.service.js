@@ -12,6 +12,7 @@ const wallet = require('../wallet/wallet.service');
 const invoices = require('../invoices/invoices.service');
 const matching = require('../matching/matching.service');
 const storage = require('../storage/storage.service');
+const pincodes = require('../zones/serviceability.service');
 
 // The booking flow, as the customer app presents it:
 //
@@ -268,6 +269,7 @@ const create = async (customer, { categoryId, scheduledAt, description, addressI
   if (!address) {
     throw ApiError.badRequest(addressId ? 'Address not found — pick one of your saved addresses' : 'Add an address before booking a service');
   }
+  await pincodes.assertBookable(address.pincode);
 
   if (partnerId && !(await prisma.partner.findUnique({ where: { id: partnerId } }))) throw ApiError.badRequest('Unknown partner');
 
