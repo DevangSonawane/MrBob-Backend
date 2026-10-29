@@ -166,4 +166,34 @@ const getAnalytics = async ({ type, months, cityId, categoryId }) => {
   };
 };
 
-module.exports = { getStats, getOverview, getAnalytics };
+// Services ranked by bookings made in the last `days` days (cancelled ones
+// left out); revenue counts completed jobs only. Every active service is
+// listed, so one with no bookings shows up at the bottom.
+const getBestSellers = async ({ days }) => {
+  const since = new Date(Date.now() - days * DAY_MS);
+  const where = { createdAt: { gte: since }, status: { not: 'CANCELLED' } };
+  const [booked, completed, categories] = await Promise.all([
+    prisma.booking.groupBy({ by: ['categoryId'], where, _count: { _all: true } }),
+    prisma.booking.groupBy({ by: ['categoryId'], where: { ...where, status: 'COMPLETED' }, _count: { _all: true }, _sum: { price: true } }),
+    prisma.serviceCategory.findMany({ select: { id: true, name: true, tier: true, isActive: true } }),
+  ]);
+  const bookedBy = new Map(booked.map((row) => [row.categoryId, row._count._all]));
+  const completedBy = new Map(completed.map((row) => [row.categoryId, row]));
+  const items = categories
+    .filter((category) => category.isActive || bookedBy.has(category.id))
+    .map((category) => ({
+      id: category.id,
+      name: category.name,
+      tier: category.tier,
+      isActive: category.isActive,
+      bookings: bookedBy.get(category.id) ?? 0,
+      completed: completedBy.get(category.id)?._count._all ?? 0,
+      revenue: money(completedBy.get(category.id)?._sum.price),
+    }))
+    .sort((a, b) => b.bookings - a.bookings || b.revenue - a.revenue || a.name.localeCompare(b.name))
+    .map((row, index) => ({ rank: index + 1, ...row }));
+  const totalBookings = items.reduce((sum, row) => sum + row.bookings, 0);
+  return { days, totalBookings, items: items.map((row) => ({ ...row, sharePercent: percentOf(row.bookings, totalBookings) })) };
+};
+
+module.exports = { getStats, getOverview, getAnalytics, getBestSellers };

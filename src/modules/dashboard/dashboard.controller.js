@@ -9,4 +9,6 @@ const getStats = catchAsync(async (req, res) => {
 const getOverview = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await service.getOverview(req.query) }));
 const getAnalytics = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await service.getAnalytics(req.query) }));
 
-module.exports = { getStats, getOverview, getAnalytics };
+const getBestSellers = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await service.getBestSellers(req.query) }));
+
+module.exports = { getStats, getOverview, getAnalytics, getBestSellers };

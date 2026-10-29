@@ -128,6 +128,17 @@ const setLocation = {
   ),
 };
 
+// A customer added by the team. They sign in with this phone number and an OTP.
+const createCustomer = {
+  body: z.object({
+    name,
+    phone: fields.phone,
+    email: fields.optionalFormatted(z.email()),
+    gender: fields.gender.optional(),
+    address: addressBody.optional(),
+  }),
+};
+
 const createUser = {
   body: z.object({
     name: z.string().min(2),
@@ -151,4 +162,5 @@ module.exports = {
   adminUpdate,
   setLocation,
   createUser,
+  createCustomer,
 };

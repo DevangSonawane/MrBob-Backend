@@ -12,6 +12,7 @@ const createSubscription = {
 const listSubscriptions = {
   query: paginationQuery.extend({
     status: z.enum(['ACTIVE', 'EXPIRED', 'CANCELLED']).optional(),
+    search: z.string().trim().min(1).max(100).optional(), // admins only: plan, or customer name / phone / email
   }),
 };
 

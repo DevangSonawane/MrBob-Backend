@@ -183,6 +183,7 @@ module.exports = {
       post: op({
         tag: PARTNERS,
         summary: 'Create a partner',
+        description: 'Returns **400** for an unknown or inactive city and **409** if that city already has a partner with the same name (ignoring case).',
         access: 'ADMIN',
         body: jsonBody(
           {
@@ -193,6 +194,7 @@ module.exports = {
           { type: 'BUILDER', name: 'Prestige Group', cityId: '0d9b7a3c-1111-4a2b-9c3d-4e5f6a7b8c9d', contact: '+919000011111' },
         ),
         responses: { 201: ok('Partner created', ref('Partner')) },
+        errors: [409],
       }),
       get: op({
         tag: PARTNERS,
@@ -201,9 +203,27 @@ module.exports = {
         params: [
           queryParam('cityId', 'Only partners in this city', { type: 'string', format: 'uuid' }),
           queryParam('type', 'Only partners of this type', { type: 'string', enum: ['BUILDER', 'RWA'] }),
+          queryParam('search', 'Part of the name or contact'),
           ...pageParams,
         ],
-        responses: { 200: paginated('A page of partners, newest first', ref('Partner')) },
+        responses: {
+          200: {
+            description: 'A page of partners, newest first, and `counts`: how many of each type match the other filters',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    items: { type: 'array', items: ref('Partner') },
+                    meta: ref('PaginationMeta'),
+                    counts: { type: 'object', properties: { BUILDER: { type: 'integer', example: 4 }, RWA: { type: 'integer', example: 9 } } },
+                  },
+                },
+              },
+            },
+          },
+        },
       }),
     },
     '/dashboard/stats': {
@@ -238,6 +258,34 @@ module.exports = {
               byService: [{ id: '3f2e1d0c-2222-4b3a-8c7d-6e5f4a3b2c1d', label: 'Plumber', value: 310 }],
               byCity: [{ id: '0d9b7a3c-1111-4a2b-9c3d-4e5f6a7b8c9d', label: 'Mumbai', value: 540 }],
             },
+          ),
+        },
+      }),
+    },
+    '/dashboard/best-sellers': {
+      get: op({
+        tag: DASHBOARD,
+        summary: 'Best-selling services',
+        description:
+          'Services ranked by bookings made in the last `days` days (cancelled bookings left out). `completed` and `revenue` count completed jobs only. ' +
+          'Every active service is listed, so one with no bookings appears at the bottom.',
+        access: 'ADMIN',
+        params: [queryParam('days', 'Period', { type: 'integer', enum: [30, 90, 180], default: 90 })],
+        responses: {
+          200: ok(
+            'Ranking',
+            {
+              type: 'object',
+              properties: {
+                days: { type: 'integer' },
+                totalBookings: { type: 'integer' },
+                items: {
+                  type: 'array',
+                  items: { type: 'object', properties: { rank: { type: 'integer' }, id: { type: 'string', format: 'uuid' }, name: { type: 'string' }, tier: { type: 'string', enum: ['REPAIR', 'RENOVATION', 'RECURRING'] }, isActive: { type: 'boolean' }, bookings: { type: 'integer' }, completed: { type: 'integer' }, revenue: { type: 'number' }, sharePercent: { type: 'number' } } },
+                },
+              },
+            },
+            { days: 90, totalBookings: 210, items: [{ rank: 1, id: '3f2e1d0c-2222-4b3a-8c7d-6e5f4a3b2c1d', name: 'Plumber', tier: 'REPAIR', isActive: true, bookings: 84, completed: 70, revenue: 24430, sharePercent: 40 }] },
           ),
         },
       }),

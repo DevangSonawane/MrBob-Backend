@@ -1,4 +1,26 @@
-const { ref, ok, paginated, jsonBody, pathParam, queryParam, pageParams, op } = require('../helpers');
+const { ref, ok, paginated, jsonBody, pathParam, queryParam, dateParam, pageParams, op } = require('../helpers');
+
+const money = (count, amount) => ({ type: 'object', properties: { count: { type: 'integer', example: count }, amount: { type: 'number', example: amount } } });
+const customerRef = { type: 'object', nullable: true, properties: { id: { type: 'string', format: 'uuid' }, name: { type: 'string' }, phone: { type: 'string', nullable: true }, email: { type: 'string', nullable: true } } };
+const paymentListItem = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    amount: { type: 'number', example: 499 },
+    status: { type: 'string', enum: ['CREATED', 'PENDING', 'SUCCESS', 'FAILED', 'REFUND_PENDING', 'REFUNDED'] },
+    method: { type: 'string', nullable: true, description: '`ONLINE` (gateway), or how it was collected after the service: `CASH`, `UPI`, `CARD`' },
+    gatewayRef: { type: 'string', nullable: true, description: 'Razorpay order id' },
+    gatewayPaymentId: { type: 'string', nullable: true },
+    refundReference: { type: 'string', nullable: true },
+    paidAt: { type: 'string', format: 'date-time', nullable: true },
+    refundedAt: { type: 'string', format: 'date-time', nullable: true },
+    createdAt: { type: 'string', format: 'date-time' },
+    kind: { type: 'string', enum: ['BOOKING', 'SUBSCRIPTION'] },
+    booking: { type: 'object', nullable: true, properties: { id: { type: 'string', format: 'uuid' }, bookingNumber: { type: 'string', example: 'BK-000123' }, paymentMode: { type: 'string', enum: ['ONLINE', 'PAY_AFTER_SERVICE'] }, service: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, name: { type: 'string' } } } } },
+    subscription: { type: 'object', nullable: true, properties: { id: { type: 'string', format: 'uuid' }, plan: { type: 'string' } } },
+    customer: customerRef,
+  },
+};
 
 const PAYMENTS = 'Payments';
 const AMC = 'AMC subscriptions';
@@ -13,6 +35,41 @@ module.exports = {
     { name: REVIEWS, description: 'Customer ratings of completed bookings. A professional\'s rating is the average of their reviews.' },
   ],
   paths: {
+    '/payments': {
+      get: op({
+        tag: PAYMENTS,
+        summary: 'List all payments (team)',
+        description:
+          'Every payment: online booking payments, money collected after the service, refunds and AMC payments, newest first, each with what it ' +
+          'paid for and who paid. `search` takes a booking reference (`BK-000123`), a Razorpay order or payment id, or the customer\'s name, phone or email.',
+        access: 'ADMIN',
+        params: [
+          queryParam('status', 'One status, or several separated by commas', { type: 'string', example: 'SUCCESS,REFUND_PENDING' }),
+          queryParam('kind', 'What it paid for', { type: 'string', enum: ['BOOKING', 'SUBSCRIPTION'] }),
+          queryParam('method', 'How it was paid', { type: 'string', enum: ['ONLINE', 'CASH', 'UPI', 'CARD'] }),
+          dateParam('createdFrom', 'Created on or after this date'),
+          dateParam('createdTo', 'Created on or before this date'),
+          queryParam('search', 'Booking reference, gateway id, or customer name / phone / email'),
+          ...pageParams,
+        ],
+        responses: { 200: paginated('A page of payments', paymentListItem) },
+      }),
+    },
+    '/payments/summary': {
+      get: op({
+        tag: PAYMENTS,
+        summary: 'Payment totals (team)',
+        description: 'Count and amount (INR) of payments collected (all, and online only), refunds due, refunded, and failed.',
+        access: 'ADMIN',
+        responses: {
+          200: ok(
+            'Totals',
+            { type: 'object', properties: { collected: money(412, 148900), collectedOnline: money(160, 70210), refundPending: money(3, 1497), refunded: money(9, 4191), failed: money(14, 6986) } },
+            { collected: { count: 412, amount: 148900 }, collectedOnline: { count: 160, amount: 70210 }, refundPending: { count: 3, amount: 1497 }, refunded: { count: 9, amount: 4191 }, failed: { count: 14, amount: 6986 } },
+          ),
+        },
+      }),
+    },
     '/payments/{id}': {
       get: op({
         tag: PAYMENTS,
@@ -61,9 +118,13 @@ module.exports = {
       get: op({
         tag: AMC,
         summary: 'List subscriptions',
-        description: 'Customers see their own. Admins see all, each with a `customer` summary.',
+        description: 'Customers see their own. Admins see all, each with a `customer` summary, and can `search`.',
         access: ['CUSTOMER', 'ADMIN'],
-        params: [queryParam('status', 'Only subscriptions in this status', { type: 'string', enum: ['ACTIVE', 'EXPIRED', 'CANCELLED'] }), ...pageParams],
+        params: [
+          queryParam('status', 'Only subscriptions in this status', { type: 'string', enum: ['ACTIVE', 'EXPIRED', 'CANCELLED'] }),
+          queryParam('search', 'Admins only: the plan, or the customer\'s name, phone or email'),
+          ...pageParams,
+        ],
         responses: {
           200: paginated('A page of subscriptions, newest first', {
             allOf: [
@@ -80,6 +141,21 @@ module.exports = {
               },
             ],
           }),
+        },
+      }),
+    },
+    '/amc/summary': {
+      get: op({
+        tag: AMC,
+        summary: 'Subscription totals (team)',
+        description: 'How many subscriptions there are in each status, and how many active ones renew within `renewalWindowDays` (60).',
+        access: 'ADMIN',
+        responses: {
+          200: ok(
+            'Totals',
+            { type: 'object', properties: { total: { type: 'integer' }, byStatus: { type: 'object', additionalProperties: { type: 'integer' } }, renewingSoon: { type: 'integer' }, renewalWindowDays: { type: 'integer' } } },
+            { total: 58, byStatus: { ACTIVE: 41, EXPIRED: 12, CANCELLED: 5 }, renewingSoon: 7, renewalWindowDays: 60 },
+          ),
         },
       }),
     },

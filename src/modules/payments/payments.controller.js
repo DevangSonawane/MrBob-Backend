@@ -9,6 +9,10 @@ const getById = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: payment });
 });
 
+const listAll = catchAsync(async (req, res) => res.status(200).json({ success: true, ...(await service.listAll(req.query)) }));
+
+const getSummary = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await service.getSummary() }));
+
 // Expects express.raw() on this route so req.body is the raw buffer needed
 // for HMAC signature verification.
 const webhook = catchAsync(async (req, res) => {
@@ -32,4 +36,4 @@ const webhook = catchAsync(async (req, res) => {
   res.status(200).json({ success: true });
 });
 
-module.exports = { getById, webhook };
+module.exports = { getById, webhook, listAll, getSummary };

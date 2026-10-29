@@ -285,7 +285,34 @@ const create = async ({ name, email, role, password }, actor) => {
   return { user, temporaryPassword: password ? undefined : tempPassword };
 };
 
+// A customer added by the team (someone who called in, or a partner's
+// resident). They sign in to the customer app later with this phone number
+// and an OTP, so there is no password. An address, if given, becomes their
+// default address.
+const createCustomer = async ({ name, phone, email, gender, address }) => {
+  const byPhone = await prisma.user.findUnique({ where: { phone } });
+  if (byPhone) {
+    throw ApiError.conflict(
+      byPhone.deletedAt ? 'This phone number belongs to a deleted account' : byPhone.role === 'CUSTOMER' ? `${byPhone.name} already has this phone number` : 'This phone number belongs to a vendor or staff account',
+    );
+  }
+  if (email && (await prisma.user.findUnique({ where: { email } }))) throw ApiError.conflict('This email is already linked to another account');
+
+  const user = await prisma.user.create({ data: { name, phone, email: email || null, gender: gender ?? null, role: 'CUSTOMER', isOnboarded: Boolean(address) } });
+  if (address) {
+    try {
+      await addresses.create(user.id, { ...address, isDefault: true });
+    } catch (err) {
+      // An address that cannot be saved (unknown city or zone) leaves no half-made customer behind.
+      await prisma.user.delete({ where: { id: user.id } });
+      throw err;
+    }
+  }
+  return getDetail(user.id);
+};
+
 module.exports = {
+  createCustomer,
   getMe,
   updateMe,
   setPhoto,

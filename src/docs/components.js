@@ -766,7 +766,16 @@ const schemas = {
     createdAt: dateTime(),
     updatedAt: dateTime(),
   }),
-  Partner: object({ id: id(), type: oneOf(['BUILDER', 'RWA'], 'BUILDER'), name: str('Prestige Group'), cityId: id(), contact: nullable(str('+919000011111')), createdAt: dateTime() }),
+  Partner: object({
+    id: id(),
+    type: oneOf(['BUILDER', 'RWA'], 'BUILDER'),
+    name: str('Prestige Group'),
+    cityId: id(),
+    city: object({ id: id(), name: str('Bengaluru') }),
+    contact: nullable(str('+919000011111')),
+    bookings: { type: 'integer', example: 12, description: 'Bookings this partner has sent' },
+    createdAt: dateTime(),
+  }),
   DashboardStats: object({
     users: object({ totalCustomers: { type: 'integer', example: 1284 }, totalProfessionals: { type: 'integer', example: 186 } }),
     professionals: object({ pendingKyc: { type: 'integer', example: 14 }, verified: { type: 'integer', example: 152 } }),

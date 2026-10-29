@@ -12,4 +12,8 @@ const analytics = {
   }),
 };
 
-module.exports = { overview, analytics };
+const bestSellers = {
+  query: z.object({ days: z.coerce.number().int().refine((value) => [30, 90, 180].includes(value), 'Choose 30, 90 or 180 days').default(90) }),
+};
+
+module.exports = { overview, analytics, bestSellers };

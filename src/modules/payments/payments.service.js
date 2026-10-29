@@ -3,6 +3,8 @@ const ApiError = require('../../utils/ApiError');
 const { isAdmin } = require('../../utils/roles');
 const razorpay = require('./razorpay.client');
 const bookings = require('../bookings/bookings.service');
+const { toSkipTake, paginatedResponse } = require('../../utils/pagination');
+const { dateRange, personSearch } = require('../../utils/queryFilters');
 
 // Orders for bookings are created by the booking flow itself (see
 // bookings.service.js create); this module covers looking a payment up and
@@ -60,4 +62,73 @@ const handleGatewayEvent = async ({ event, orderId, paymentId }) => {
   return null;
 };
 
-module.exports = { createOrderForSubscription, getById, handleGatewayEvent };
+// ---------------------------------------------------------------------------
+// The team's view of every payment: online ones, money collected after the
+// service, refunds, and AMC payments.
+// ---------------------------------------------------------------------------
+
+const customerSelect = { select: { id: true, name: true, phone: true, email: true } };
+const listInclude = {
+  booking: { select: { id: true, sequence: true, paymentMode: true, category: { select: { id: true, name: true } }, customer: customerSelect } },
+  subscription: { select: { id: true, plan: true, customer: customerSelect } },
+};
+
+const toListView = ({ booking, subscription, amount, ...payment }) => ({
+  id: payment.id,
+  amount: Number(amount),
+  status: payment.status,
+  method: payment.method,
+  gatewayRef: payment.gatewayRef,
+  gatewayPaymentId: payment.gatewayPaymentId,
+  refundReference: payment.refundReference,
+  paidAt: payment.paidAt,
+  refundedAt: payment.refundedAt,
+  createdAt: payment.createdAt,
+  // What it paid for, and who paid.
+  kind: booking ? 'BOOKING' : 'SUBSCRIPTION',
+  booking: booking ? { id: booking.id, bookingNumber: bookings.bookingNumber(booking.sequence), paymentMode: booking.paymentMode, service: booking.category } : null,
+  subscription: subscription ? { id: subscription.id, plan: subscription.plan } : null,
+  customer: booking?.customer ?? subscription?.customer ?? null,
+});
+
+const listAll = async ({ page, limit, status, kind, method, createdFrom, createdTo, search }) => {
+  const createdAt = dateRange(createdFrom, createdTo);
+  // "BK-000123" (or just its digits) finds that booking's payment.
+  const sequence = search && /^(bk-?)?\d{1,9}$/i.test(search) ? Number(search.replace(/\D/g, '')) : null;
+  const where = {
+    ...(status && { status: { in: status } }),
+    ...(kind === 'BOOKING' && { bookingId: { not: null } }),
+    ...(kind === 'SUBSCRIPTION' && { subscriptionId: { not: null } }),
+    ...(method && { method }),
+    ...(createdAt && { createdAt }),
+    ...(search && {
+      OR: [
+        ...(sequence !== null ? [{ booking: { is: { sequence } } }] : []),
+        { gatewayRef: { contains: search } },
+        { gatewayPaymentId: { contains: search } },
+        { booking: { is: { customer: personSearch(search) } } },
+        { subscription: { is: { customer: personSearch(search) } } },
+      ],
+    }),
+  };
+  const [rows, total] = await Promise.all([
+    prisma.payment.findMany({ where, include: listInclude, orderBy: { createdAt: 'desc' }, ...toSkipTake({ page, limit }) }),
+    prisma.payment.count({ where }),
+  ]);
+  return paginatedResponse(rows.map(toListView), total, { page, limit });
+};
+
+const getSummary = async () => {
+  const sumOf = (where) => prisma.payment.aggregate({ where, _sum: { amount: true }, _count: { _all: true } });
+  const [collected, online, refundPending, refunded, failed] = await Promise.all([
+    sumOf({ status: 'SUCCESS' }),
+    sumOf({ status: 'SUCCESS', method: 'ONLINE' }),
+    sumOf({ status: 'REFUND_PENDING' }),
+    sumOf({ status: 'REFUNDED' }),
+    sumOf({ status: 'FAILED' }),
+  ]);
+  const view = (result) => ({ count: result._count._all, amount: Number(result._sum.amount ?? 0) });
+  return { collected: view(collected), collectedOnline: view(online), refundPending: view(refundPending), refunded: view(refunded), failed: view(failed) };
+};
+
+module.exports = { createOrderForSubscription, getById, handleGatewayEvent, listAll, getSummary };

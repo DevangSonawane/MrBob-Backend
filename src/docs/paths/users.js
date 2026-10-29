@@ -108,6 +108,46 @@ module.exports = {
         errors: [409],
       }),
     },
+    '/users/customers': {
+      post: op({
+        tag: [TAG, SUPER_ADMIN],
+        summary: 'Add a customer (team)',
+        description:
+          'For someone who called in, or a partner\'s resident. The customer signs in to the app later with this phone number and an OTP — there is ' +
+          'no password. `address`, if given, becomes their default address (same fields as adding an address in the app).\n\n' +
+          'Returns **409** if the phone number or email already belongs to an account, and **400** for an unknown city or zone (nothing is saved).',
+        access: 'ADMIN',
+        body: jsonBody(
+          {
+            type: 'object',
+            required: ['name', 'phone'],
+            properties: {
+              name: { type: 'string', minLength: 2, maxLength: 100 },
+              phone: { type: 'string', example: '+919812345678' },
+              email: { type: 'string', format: 'email', nullable: true },
+              gender: { type: 'string', enum: ['MALE', 'FEMALE', 'OTHER'] },
+              address: {
+                type: 'object',
+                required: ['line1', 'cityId', 'state', 'pincode'],
+                properties: {
+                  label: { type: 'string', enum: ['HOME', 'WORK', 'OTHER'] },
+                  line1: { type: 'string', minLength: 5 },
+                  line2: { type: 'string', nullable: true },
+                  landmark: { type: 'string', nullable: true },
+                  cityId: { type: 'string', format: 'uuid' },
+                  zoneId: { type: 'string', format: 'uuid', nullable: true },
+                  state: { type: 'string' },
+                  pincode: { type: 'string', pattern: '^[1-9]\\d{5}$' },
+                },
+              },
+            },
+          },
+          { name: 'Aarav Mehta', phone: '+919812345678', email: 'aarav@example.com', address: { line1: '12, 4th Cross, 5th Block', cityId: '0d9b7a3c-1111-4a2b-9c3d-4e5f6a7b8c9d', state: 'Karnataka', pincode: '560034' } },
+        ),
+        responses: { 201: ok('The new customer, with their addresses', ref('UserDetail')) },
+        errors: [409],
+      }),
+    },
     '/users/summary': {
       get: op({
         tag: [TAG, SUPER_ADMIN],

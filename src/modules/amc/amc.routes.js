@@ -9,6 +9,7 @@ const router = Router();
 router.post('/', authenticate, authorize('CUSTOMER'), validate(schema.createSubscription), controller.create);
 router.get('/', authenticate, authorize('CUSTOMER', 'ADMIN'), validate(schema.listSubscriptions), controller.list);
 
+router.get('/summary', authenticate, authorize('ADMIN'), controller.getSummary);
 router.get('/:id', authenticate, validate(schema.getSubscription), controller.getById);
 
 router.post('/:id/cancel', authenticate, validate(schema.getSubscription), controller.cancel);

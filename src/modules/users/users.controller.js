@@ -67,12 +67,15 @@ const adminUpdate = catchAsync(async (req, res) => ok(res, sanitizeUser(await us
 
 const adminDelete = catchAsync(async (req, res) => ok(res, await usersService.adminDelete(req.params.id, req.user)));
 
+const createCustomer = catchAsync(async (req, res) => ok(res, sanitizeUser(await usersService.createCustomer(req.body)), 201));
+
 const create = catchAsync(async (req, res) => {
   const { user, temporaryPassword } = await usersService.create(req.body, req.user);
   ok(res, { user: sanitizeUser(user), temporaryPassword }, 201);
 });
 
 module.exports = {
+  createCustomer,
   getMe,
   updateMe,
   setMyPhoto,

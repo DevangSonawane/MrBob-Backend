@@ -37,6 +37,8 @@ router.delete('/me/addresses/:addressId', authenticate, validate(schema.addressO
 
 router.get('/', authenticate, authorize('ADMIN'), validate(schema.listUsers), controller.list);
 router.post('/', authenticate, authorize('ADMIN'), validate(schema.createUser), controller.create);
+// A customer added by the team, with a phone number to sign in with and optionally an address.
+router.post('/customers', authenticate, authorize('ADMIN'), validate(schema.createCustomer), controller.createCustomer);
 router.get('/summary', authenticate, authorize('ADMIN'), controller.getSummary);
 
 router.get('/:id', authenticate, authorize('ADMIN'), validate(schema.getUser), controller.getById);
