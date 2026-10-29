@@ -66,6 +66,7 @@ model User {
   authSessions          AuthSession[]
   assignedDisputes      Dispute[]               @relation("DisputeAssignee")
   disputeMessages       DisputeMessage[]
+  pushDevices           PushDevice[]
 
   @@index([cityId])
   @@map("users")
@@ -866,10 +867,38 @@ model AuthSession {
   revokedAt  DateTime?
   createdAt  DateTime  @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pushDevices PushDevice[]
 
   @@index([userId])
   @@map("auth_sessions")
+}
+
+enum DevicePlatform {
+  ANDROID
+  IOS
+  WEB
+}
+
+// A phone (or browser) that receives push notifications: its Firebase Cloud
+// Messaging token, and the sign-in session it was registered from. Signing
+// out ends the session and removes the device, so a shared or sold phone
+// stops getting the previous user's notifications.
+model PushDevice {
+  id         String         @id @default(uuid())
+  token      String         @unique // the FCM registration token
+  userId     String
+  sessionId  String?
+  platform   DevicePlatform
+  createdAt  DateTime       @default(now())
+  lastSeenAt DateTime       @default(now()) // last registered; apps re-register on every start
+
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session AuthSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionId])
+  @@map("push_devices")
 }
 
 // A job offered to one vendor during dispatch. The first vendor to accept

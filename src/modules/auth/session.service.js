@@ -3,6 +3,7 @@ const prisma = require('../../config/prisma');
 const env = require('../../config/env');
 const ApiError = require('../../utils/ApiError');
 const { signAccessToken, verifyRefreshToken } = require('./token.util');
+const devices = require('../notifications/devices.service');
 
 // Sign-in sessions. The access token is a short-lived JWT; the refresh token
 // is "<session id>.<secret>", backed by a row here, so it can be extended
@@ -68,14 +69,20 @@ const refresh = async (refreshToken, { userAgent } = {}) => {
   return start(await usableUser(payload.sub), { userAgent });
 };
 
-// Signs this device out. Unknown or already-revoked tokens are fine.
+// Signs this device out, and stops its push notifications. Unknown or already-revoked tokens are fine.
 const end = async (refreshToken) => {
   const [sessionId] = String(refreshToken ?? '').split('.');
-  if (UUID.test(sessionId)) await prisma.authSession.updateMany({ where: { id: sessionId, revokedAt: null }, data: { revokedAt: new Date() } });
+  if (UUID.test(sessionId)) {
+    await prisma.authSession.updateMany({ where: { id: sessionId, revokedAt: null }, data: { revokedAt: new Date() } });
+    await devices.removeForSession(sessionId);
+  }
   return { signedOut: true };
 };
 
-// Signs the user out everywhere (deactivated or deleted account).
-const endAll = (userId, db = prisma) => db.authSession.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
+// Signs the user out everywhere (deactivated or deleted account), with no more push notifications.
+const endAll = async (userId, db = prisma) => {
+  await devices.removeForUser(userId, db);
+  return db.authSession.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
+};
 
 module.exports = { start, refresh, end, endAll };

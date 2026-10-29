@@ -70,6 +70,17 @@ const updateAddress = {
 
 const addressOnly = { params: addressParams };
 
+// --- Push notification devices ---
+
+const registerDevice = {
+  body: z.object({
+    token: z.string().trim().min(20, 'Send the FCM registration token').max(4096),
+    platform: z.enum(['ANDROID', 'IOS', 'WEB']),
+  }),
+};
+
+const unregisterDevice = { params: z.object({ token: z.string().min(20).max(4096) }) };
+
 // --- Administration ---
 
 const listUsers = {
@@ -163,4 +174,6 @@ module.exports = {
   setLocation,
   createUser,
   createCustomer,
+  registerDevice,
+  unregisterDevice,
 };

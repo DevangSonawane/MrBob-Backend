@@ -2,6 +2,7 @@ const catchAsync = require('../../utils/catchAsync');
 const sanitizeUser = require('../../utils/sanitizeUser');
 const usersService = require('./users.service');
 const addresses = require('./addresses.service');
+const devices = require('../notifications/devices.service');
 const { isAdmin } = require('../../utils/roles');
 const ApiError = require('../../utils/ApiError');
 
@@ -67,6 +68,9 @@ const adminUpdate = catchAsync(async (req, res) => ok(res, sanitizeUser(await us
 
 const adminDelete = catchAsync(async (req, res) => ok(res, await usersService.adminDelete(req.params.id, req.user)));
 
+const registerDevice = catchAsync(async (req, res) => ok(res, await devices.register(req.user, req.body), 201));
+const unregisterDevice = catchAsync(async (req, res) => ok(res, await devices.unregister(req.user, req.params.token)));
+
 const createCustomer = catchAsync(async (req, res) => ok(res, sanitizeUser(await usersService.createCustomer(req.body)), 201));
 
 const create = catchAsync(async (req, res) => {
@@ -75,6 +79,8 @@ const create = catchAsync(async (req, res) => {
 });
 
 module.exports = {
+  registerDevice,
+  unregisterDevice,
   createCustomer,
   getMe,
   updateMe,

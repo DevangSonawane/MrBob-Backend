@@ -75,7 +75,8 @@ module.exports = {
         '- When a call fails with **401** and `details.code` `TOKEN_EXPIRED` (or just before expiry), call **`POST /auth/refresh`** with the ' +
         'refresh token, store the new access token and retry once. The refresh token stays the same and stays valid for 30 days after it was last used.\n' +
         '- On `SESSION_EXPIRED` or `TOKEN_INVALID`, clear the tokens and show sign-in.\n' +
-        '- On logout, call **`POST /auth/logout`**.',
+        '- After signing in (and on every app start), register for push notifications with **`POST /users/me/devices`**.\n' +
+        '- On logout, call **`POST /auth/logout`**; it also stops this device\'s push notifications.',
     },
     ...sections.flatMap((section) => section.tags),
   ],

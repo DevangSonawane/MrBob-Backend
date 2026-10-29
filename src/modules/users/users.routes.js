@@ -28,6 +28,9 @@ router.post('/me/phone/verify', authenticate, validate(schema.confirmPhoneChange
 router.get('/me/addresses', authenticate, controller.listMyAddresses);
 router.post('/me/addresses', authenticate, validate(schema.createAddress), controller.createMyAddress);
 router.patch('/me/addresses/:addressId', authenticate, validate(schema.updateAddress), controller.updateMyAddress);
+// Push notifications: the app registers its FCM token after signing in and on every start.
+router.post('/me/devices', authenticate, validate(schema.registerDevice), controller.registerDevice);
+router.delete('/me/devices/:token', authenticate, validate(schema.unregisterDevice), controller.unregisterDevice);
 router.post('/me/addresses/:addressId/default', authenticate, validate(schema.addressOnly), controller.setMyDefaultAddress);
 router.delete('/me/addresses/:addressId', authenticate, validate(schema.addressOnly), controller.removeMyAddress);
 

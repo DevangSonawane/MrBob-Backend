@@ -13,7 +13,8 @@ const authenticate = (req, res, next) => {
 
   try {
     const payload = jwt.verify(token, env.JWT_ACCESS_SECRET);
-    req.user = { id: payload.sub, role: payload.role };
+    // sessionId: the sign-in session (absent on tokens issued before sessions existed).
+    req.user = { id: payload.sub, role: payload.role, sessionId: payload.sid };
     next();
   } catch (err) {
     // TOKEN_EXPIRED: the app should call POST /auth/refresh and retry. TOKEN_INVALID: sign in again.

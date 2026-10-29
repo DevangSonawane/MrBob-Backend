@@ -18,7 +18,7 @@ full extraction plan (dispatch and payments are the likely first candidates).
 | Docs | OpenAPI 3 spec in `src/docs`, served by swagger-ui-express (`/api-docs`) |
 | Logging | Pino |
 | Payments | Razorpay |
-| Notifications | WhatsApp Business API + Firebase Cloud Messaging (stubbed, see below) |
+| Notifications | Firebase Cloud Messaging push (HTTP v1; devices register via `POST /users/me/devices`) + WhatsApp Business API (stubbed) |
 | Local DB | Docker Compose (Postgres) |
 | Deploy (now) | Render (`render.yaml` blueprint) |
 | Deploy (later) | AWS EC2/ECS, per the architecture doc |

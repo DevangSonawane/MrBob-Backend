@@ -42,7 +42,8 @@ const deleteAccount = async (userId) => {
     });
     await tx.aMCSubscription.updateMany({ where: { customerId: userId, status: 'ACTIVE' }, data: { status: 'CANCELLED' } });
     await tx.address.deleteMany({ where: { userId } });
-    // Signed out everywhere.
+    // Signed out everywhere, with no more push notifications.
+    await tx.pushDevice.deleteMany({ where: { userId } });
     await tx.authSession.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
 
     if (professional) {

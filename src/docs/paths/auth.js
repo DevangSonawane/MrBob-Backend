@@ -1,4 +1,4 @@
-const { ref, ok, jsonBody, op } = require('../helpers');
+const { ref, ok, jsonBody, pathParam, op } = require('../helpers');
 const { examples } = require('../components');
 
 const TAG = 'Auth';
@@ -21,6 +21,49 @@ module.exports = {
     },
   ],
   paths: {
+    '/users/me/devices': {
+      post: op({
+        tag: SESSION,
+        summary: 'Register this device for push notifications',
+        description:
+          'Call right after signing in, and again on every app start and whenever Firebase gives the app a new token ' +
+          '(`onTokenRefresh` / `onNewToken`). `token` is the Firebase Cloud Messaging registration token.\n\n' +
+          'The device belongs to this sign-in: signing out (`POST /auth/logout`), or the account being deactivated or deleted, removes it. ' +
+          'A token already registered — another account signed in on the same phone — moves to the caller. The 10 most recently seen devices are kept.\n\n' +
+          '**What arrives:** a notification (`title`, `body`) plus `data` with string values. `data.type` says what it is about and which id comes with it:\n\n' +
+          '| `type` | Sent to | Also in `data` |\n|---|---|---|\n' +
+          '| `JOB_OFFER` | Vendor: a job near you (accept within the offer time) | `bookingId` |\n' +
+          '| `BOOKING` | Customer or vendor: assigned, started, completed, cancelled, rescheduled, refunded | `bookingId`, `status` |\n' +
+          '| `VENDOR_ONBOARDING` | Vendor: approved, rejected, changes needed | `status` |\n' +
+          '| `PAYOUT` | Vendor: money sent | `payoutId` |\n' +
+          '| `DISPUTE` | Whoever raised it: a reply, resolved, closed | `disputeId`, `status` |',
+        body: jsonBody(
+          {
+            type: 'object',
+            required: ['token', 'platform'],
+            properties: { token: { type: 'string', minLength: 20, description: 'FCM registration token' }, platform: { type: 'string', enum: ['ANDROID', 'IOS', 'WEB'] } },
+          },
+          { token: 'fGx2Lp0kTqeY3dW7:APA91bH4m...', platform: 'ANDROID' },
+        ),
+        responses: {
+          201: ok(
+            'Registered',
+            { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, platform: { type: 'string', enum: ['ANDROID', 'IOS', 'WEB'] }, registeredAt: { type: 'string', format: 'date-time' }, lastSeenAt: { type: 'string', format: 'date-time' } } },
+            { id: '1a2b3c4d-6666-4e5f-8a9b-0c1d2e3f4a5b', platform: 'ANDROID', registeredAt: '2026-10-30T09:30:00.000Z', lastSeenAt: '2026-10-30T09:30:00.000Z' },
+          ),
+        },
+      }),
+    },
+    '/users/me/devices/{token}': {
+      delete: op({
+        tag: SESSION,
+        summary: 'Stop push notifications on this device',
+        description: 'For a "notifications off" switch. Signing out already does this. `token` must be URL-encoded. **404** if this account has no such device.',
+        params: [pathParam('token', 'The FCM registration token, URL-encoded', { type: 'string' })],
+        responses: { 200: ok('Removed', { type: 'object', properties: { removed: { type: 'boolean', example: true } } }, { removed: true }) },
+        errors: [404],
+      }),
+    },
     '/auth/otp/request': {
       post: op({
         tag: TAG,
@@ -135,7 +178,9 @@ module.exports = {
       post: op({
         tag: [SESSION, TAG],
         summary: 'Sign this device out',
-        description: 'The refresh token stops working. The current access token still works until it expires (at most `accessTokenExpiresIn`). Always succeeds.',
+        description:
+          'The refresh token stops working, and the push notification devices registered with this sign-in are removed. The current access token ' +
+          'still works until it expires (at most `accessTokenExpiresIn`). Always succeeds.',
         access: 'public',
         body: jsonBody({ type: 'object', required: ['refreshToken'], properties: { refreshToken: { type: 'string' } } }, { refreshToken: examples.tokens.refreshToken }),
         responses: { 200: ok('Signed out', { type: 'object', properties: { signedOut: { type: 'boolean' } } }, { signedOut: true }) },
