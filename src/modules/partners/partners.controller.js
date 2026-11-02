@@ -11,4 +11,6 @@ const list = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, ...result });
 });
 
-module.exports = { create, list };
+const update = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await service.update(req.params.id, req.body) }));
+
+module.exports = { create, list, update };

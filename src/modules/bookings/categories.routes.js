@@ -29,6 +29,17 @@ router.post(
   }),
 );
 
+// Rename, re-tier or re-price. Bookings already made keep their price.
+router.patch(
+  '/:id',
+  authenticate,
+  authorize('ADMIN'),
+  validate(schema.updateCategory),
+  catchAsync(async (req, res) => {
+    res.status(200).json({ success: true, data: await service.update(req.params.id, req.body) });
+  }),
+);
+
 router.delete(
   '/:id',
   authenticate,

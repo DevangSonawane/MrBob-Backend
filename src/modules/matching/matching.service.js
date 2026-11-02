@@ -187,6 +187,12 @@ const settleOnAccept = async (tx, bookingId, professionalId) => {
 // The booking was cancelled, assigned by the team, or deleted: pending offers are withdrawn.
 const withdrawAll = (bookingId, db = prisma) => db.jobOffer.updateMany({ where: { bookingId, status: 'OFFERED' }, data: { status: 'WITHDRAWN', respondedAt: new Date() } });
 
+// The booking moved to another address while still looking for a vendor: the
+// offers sent for the old place go, so vendors near the new one can be
+// offered it (those who already turned it down are not asked again). The
+// caller resets the booking's dispatch fields and calls startSoon afterwards.
+const forgetOffers = (bookingId, db = prisma) => db.jobOffer.deleteMany({ where: { bookingId, status: { in: ['OFFERED', 'EXPIRED', 'WITHDRAWN'] } } });
+
 // May this vendor take this booking? In 'nearby' mode only with a live offer,
 // or once the booking is open to everyone.
 const mayAccept = async (booking, professionalId) => {
@@ -335,6 +341,7 @@ module.exports = {
   advanceIfIdle,
   settleOnAccept,
   withdrawAll,
+  forgetOffers,
   mayAccept,
   availableWhereFor,
   offerFor,

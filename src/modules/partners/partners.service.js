@@ -6,12 +6,17 @@ const include = { city: { select: { id: true, name: true } }, _count: { select: 
 
 const toView = ({ _count, ...partner }) => ({ ...partner, bookings: _count.bookings });
 
+// The city must be active, and no other partner there may have the same name.
+const assertPlace = async ({ id, name, cityId }) => {
+  const city = await prisma.city.findUnique({ where: { id: cityId } });
+  if (!city || !city.isActive) throw ApiError.badRequest('Unknown or inactive city');
+  const existing = await prisma.partner.findFirst({ where: { cityId, name: { equals: name, mode: 'insensitive' }, ...(id && { id: { not: id } }) } });
+  if (existing) throw ApiError.conflict(`${existing.name} is already a partner in ${city.name}`);
+};
+
 const create = async ({ name: rawName, contact, ...data }) => {
   const name = rawName.trim();
-  const city = await prisma.city.findUnique({ where: { id: data.cityId } });
-  if (!city || !city.isActive) throw ApiError.badRequest('Unknown or inactive city');
-  const existing = await prisma.partner.findFirst({ where: { cityId: data.cityId, name: { equals: name, mode: 'insensitive' } } });
-  if (existing) throw ApiError.conflict(`${existing.name} is already a partner in ${city.name}`);
+  await assertPlace({ name, cityId: data.cityId });
   return toView(await prisma.partner.create({ data: { ...data, name, contact: contact?.trim() || null }, include }));
 };
 
@@ -34,4 +39,13 @@ const list = async ({ page, limit, cityId, type, search }) => {
   return { ...paginatedResponse(items.map(toView), total, { page, limit }), counts };
 };
 
-module.exports = { create, list };
+const update = async (id, { name: rawName, contact, ...data }) => {
+  const partner = await prisma.partner.findUnique({ where: { id } });
+  if (!partner) throw ApiError.notFound('Partner not found');
+  const name = rawName?.trim() ?? partner.name;
+  if (rawName !== undefined || data.cityId) await assertPlace({ id, name, cityId: data.cityId ?? partner.cityId });
+  const changes = { ...data, name, ...(contact !== undefined && { contact: contact?.trim() || null }) };
+  return toView(await prisma.partner.update({ where: { id }, data: changes, include }));
+};
+
+module.exports = { create, list, update };

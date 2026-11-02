@@ -37,6 +37,16 @@ module.exports = {
       }),
     },
     '/zones/cities/{id}': {
+      patch: op({
+        tag: ZONES,
+        summary: 'Edit a city',
+        description: 'Rename it or change its tier. Users, addresses, partners and bookings follow the new name. **409** if another active city has the name.',
+        access: 'ADMIN',
+        params: [pathParam('id', 'City id')],
+        body: jsonBody({ type: 'object', minProperties: 1, properties: { name: { type: 'string', minLength: 2 }, tier: { type: 'string', enum: ['TIER_1', 'TIER_2'] } } }, { name: 'Bengaluru' }),
+        responses: { 200: ok('The updated city', ref('City')) },
+        errors: [404, 409],
+      }),
       delete: op({
         tag: ZONES,
         summary: 'Remove a city',
@@ -50,6 +60,16 @@ module.exports = {
       }),
     },
     '/zones/{id}': {
+      patch: op({
+        tag: ZONES,
+        summary: 'Rename a zone',
+        description: '**409** if another active zone in the same city has the name.',
+        access: 'ADMIN',
+        params: [pathParam('id', 'Zone id')],
+        body: jsonBody({ type: 'object', required: ['name'], properties: { name: { type: 'string', minLength: 2 } } }, { name: 'Koramangala' }),
+        responses: { 200: ok('The updated zone', ref('Zone')) },
+        errors: [404, 409],
+      }),
       delete: op({
         tag: ZONES,
         summary: 'Remove a zone',
@@ -224,6 +244,25 @@ module.exports = {
             },
           },
         },
+      }),
+    },
+    '/partners/{id}': {
+      patch: op({
+        tag: PARTNERS,
+        summary: 'Edit a partner',
+        description: 'Only what is sent changes; `contact: null` clears it. **400** for an unknown or inactive city, **409** if that city already has a partner with the name.',
+        access: 'ADMIN',
+        params: [pathParam('id', 'Partner id')],
+        body: jsonBody(
+          {
+            type: 'object',
+            minProperties: 1,
+            properties: { type: { type: 'string', enum: ['BUILDER', 'RWA'] }, name: { type: 'string', minLength: 2 }, cityId: { type: 'string', format: 'uuid' }, contact: { type: 'string', nullable: true } },
+          },
+          { contact: '+919000022222' },
+        ),
+        responses: { 200: ok('The updated partner', ref('Partner')) },
+        errors: [404, 409],
       }),
     },
     '/dashboard/stats': {

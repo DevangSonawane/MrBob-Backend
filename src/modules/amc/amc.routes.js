@@ -12,6 +12,8 @@ router.get('/', authenticate, authorize('CUSTOMER', 'ADMIN'), validate(schema.li
 router.get('/summary', authenticate, authorize('ADMIN'), controller.getSummary);
 router.get('/:id', authenticate, validate(schema.getSubscription), controller.getById);
 
+router.patch('/:id', authenticate, authorize('ADMIN'), validate(schema.updateSubscription), controller.update);
+
 router.post('/:id/cancel', authenticate, validate(schema.getSubscription), controller.cancel);
 
 module.exports = router;

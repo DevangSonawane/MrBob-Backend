@@ -26,6 +26,10 @@ const removeCity = catchAsync(async (req, res) => res.status(200).json({ success
 
 const removeZone = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await service.removeZone(req.params.id) }));
 
+const updateCity = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await service.updateCity(req.params.id, req.body) }));
+
+const updateZone = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await service.updateZone(req.params.id, req.body) }));
+
 const checkPincode = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await pincodes.check(req.query.pincode) }));
 
 const listPincodes = catchAsync(async (req, res) => res.status(200).json({ success: true, ...(await pincodes.list(req.query)) }));
@@ -36,4 +40,4 @@ const updatePincode = catchAsync(async (req, res) => res.status(200).json({ succ
 
 const removePincode = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await pincodes.remove(req.params.id) }));
 
-module.exports = { removeCity, removeZone, listCities, createCity, listZones, createZone, checkPincode, listPincodes, addPincodes, updatePincode, removePincode };
+module.exports = { removeCity, removeZone, listCities, createCity, updateCity, listZones, createZone, updateZone, checkPincode, listPincodes, addPincodes, updatePincode, removePincode };

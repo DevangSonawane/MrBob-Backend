@@ -23,6 +23,15 @@ const listZones = {
 
 const byId = { params: z.object({ id: z.string().uuid() }) };
 
+const updateCity = {
+  params: byId.params,
+  body: z
+    .object({ name: z.string().trim().min(2).max(80).optional(), tier: z.enum(['TIER_1', 'TIER_2']).optional() })
+    .refine((data) => Object.keys(data).length > 0, { message: 'No fields to update' }),
+};
+
+const updateZone = { params: byId.params, body: z.object({ name: z.string().trim().min(2).max(80) }) };
+
 // --- Pincode geofence ---
 
 const checkPincode = { query: z.object({ pincode: fields.pincode }) };
@@ -63,4 +72,4 @@ const updatePincode = {
     .refine((data) => Object.keys(data).length > 0, { message: 'No fields to update' }),
 };
 
-module.exports = { byId, createCity, createZone, listZones, checkPincode, listPincodes, addPincodes, updatePincode };
+module.exports = { byId, createCity, createZone, updateCity, updateZone, listZones, checkPincode, listPincodes, addPincodes, updatePincode };

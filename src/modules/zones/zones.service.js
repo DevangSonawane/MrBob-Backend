@@ -49,4 +49,25 @@ const removeCity = async (id) => {
   return { deleted: true, name: city.name };
 };
 
-module.exports = { removeCity, removeZone, listCities, createCity, listZones, createZone };
+// Renaming or re-tiering. Users, addresses and bookings point at the row, so they follow the new name.
+const updateCity = async (id, data) => {
+  const city = await prisma.city.findUnique({ where: { id } });
+  if (!city || !city.isActive) throw ApiError.notFound('City not found');
+  const name = data.name?.trim();
+  if (name) {
+    const clash = await prisma.city.findFirst({ where: { id: { not: id }, isActive: true, name: sameName(name) } });
+    if (clash) throw ApiError.conflict(`${clash.name} already exists`);
+  }
+  return prisma.city.update({ where: { id }, data: { ...data, ...(name && { name }) } });
+};
+
+const updateZone = async (id, { name: rawName }) => {
+  const zone = await prisma.zone.findUnique({ where: { id }, include: { city: true } });
+  if (!zone || !zone.isActive) throw ApiError.notFound('Zone not found');
+  const name = rawName.trim();
+  const clash = await prisma.zone.findFirst({ where: { id: { not: id }, cityId: zone.cityId, isActive: true, name: sameName(name) } });
+  if (clash) throw ApiError.conflict(`${clash.name} already exists in ${zone.city.name}`);
+  return prisma.zone.update({ where: { id }, data: { name } });
+};
+
+module.exports = { removeCity, removeZone, listCities, createCity, updateCity, listZones, createZone, updateZone };

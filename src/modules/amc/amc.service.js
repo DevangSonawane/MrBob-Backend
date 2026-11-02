@@ -42,6 +42,20 @@ const cancel = async (id, user) => {
   return prisma.aMCSubscription.update({ where: { id: subscription.id }, data: { status: 'CANCELLED' } });
 };
 
+// The team corrects a subscription: plan name, dates, or status (e.g. marking it expired).
+const update = async (id, data) => {
+  const subscription = await prisma.aMCSubscription.findUnique({ where: { id } });
+  if (!subscription) throw ApiError.notFound('Subscription not found');
+  const startDate = data.startDate ?? subscription.startDate;
+  const renewalDate = data.renewalDate ?? subscription.renewalDate;
+  if (renewalDate <= startDate) throw ApiError.badRequest('The renewal date must be after the start date');
+  return prisma.aMCSubscription.update({
+    where: { id },
+    data: { ...data, ...(data.plan && { plan: data.plan.trim() }) },
+    include: { customer: { select: { id: true, name: true, phone: true, email: true } } },
+  });
+};
+
 // Headline numbers for the dashboard's subscriptions screen.
 const getSummary = async () => {
   const renewBy = new Date(Date.now() + RENEWAL_WINDOW_DAYS * 24 * 60 * 60 * 1000);
@@ -56,4 +70,4 @@ const getSummary = async () => {
   return { total: byStatus.ACTIVE + byStatus.EXPIRED + byStatus.CANCELLED, byStatus, renewingSoon, renewalWindowDays: RENEWAL_WINDOW_DAYS };
 };
 
-module.exports = { create, list, getSummary, getByIdForUser, cancel };
+module.exports = { create, list, update, getSummary, getByIdForUser, cancel };

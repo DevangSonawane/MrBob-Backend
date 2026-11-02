@@ -20,4 +20,16 @@ const getSubscription = {
   params: z.object({ id: z.string().uuid() }),
 };
 
-module.exports = { createSubscription, listSubscriptions, getSubscription };
+const updateSubscription = {
+  params: getSubscription.params,
+  body: z
+    .object({
+      plan: z.string().trim().min(2).max(120).optional(),
+      startDate: z.coerce.date().optional(),
+      renewalDate: z.coerce.date().optional(),
+      status: z.enum(['ACTIVE', 'EXPIRED', 'CANCELLED']).optional(),
+    })
+    .refine((data) => Object.keys(data).length > 0, { message: 'No fields to update' }),
+};
+
+module.exports = { createSubscription, listSubscriptions, getSubscription, updateSubscription };

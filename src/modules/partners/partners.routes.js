@@ -8,5 +8,6 @@ const router = Router();
 
 router.post('/', authenticate, authorize('ADMIN'), validate(schema.createPartner), controller.create);
 router.get('/', authenticate, authorize('ADMIN'), validate(schema.listPartners), controller.list);
+router.patch('/:id', authenticate, authorize('ADMIN'), validate(schema.updatePartner), controller.update);
 
 module.exports = router;

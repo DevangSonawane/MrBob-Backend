@@ -124,7 +124,27 @@ const markRefunded = {
   body: z.object({ reference: z.string().trim().min(3).max(200) }),
 };
 
+// The team edits a booking: move it to another of the customer's addresses
+// (or a new one), change the price, the person on site, or the description.
+const updateBooking = {
+  params: bookingId,
+  body: z
+    .object({
+      addressId: z.uuid().optional(),
+      address: adminAddress.optional(),
+      price: z.coerce.number().positive().max(1000000).optional(),
+      description: z.string().trim().min(3).max(1000).optional(),
+      contactName: z.string().trim().max(100).nullable().optional().transform((value) => (value === undefined ? undefined : value || null)),
+      contactPhone: z
+        .preprocess((value) => (value === '' ? null : value), z.string().regex(/^\+?[1-9]\d{9,14}$/, 'Invalid phone number').nullable().optional()),
+      note: z.string().trim().max(500).optional(), // why, for the timeline
+    })
+    .refine((data) => !(data.addressId && data.address), { message: 'Give either addressId or address', path: ['addressId'] })
+    .refine((data) => Object.keys(data).some((key) => key !== 'note'), { message: 'No fields to update' }),
+};
+
 module.exports = {
+  updateBooking,
   STATUSES,
   createBooking,
   createForCustomer,

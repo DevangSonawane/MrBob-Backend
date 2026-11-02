@@ -429,6 +429,7 @@ enum BookingEventType {
   CANCELLED
   PAYMENT_COLLECTED
   REFUNDED
+  EDITED // the team changed the address, price, contact or description
 }
 
 // Append-only timeline of everything that happened to a booking.

@@ -31,5 +31,7 @@ router.post('/:id/payment/refund', authenticate, authorize('ADMIN'), validate(sc
 router.post('/:id/cancel', authenticate, authorize('CUSTOMER', 'ADMIN'), validate(schema.cancelBooking), controller.cancel);
 router.post('/:id/reschedule', authenticate, authorize('CUSTOMER', 'ADMIN'), validate(schema.rescheduleBooking), controller.reschedule);
 router.patch('/:id/status', authenticate, authorize('ADMIN'), validate(schema.updateStatus), controller.updateStatus);
+// Address, price, person on site, description (the team). The time is changed with reschedule.
+router.patch('/:id', authenticate, authorize('ADMIN'), validate(schema.updateBooking), controller.updateDetails);
 
 module.exports = router;

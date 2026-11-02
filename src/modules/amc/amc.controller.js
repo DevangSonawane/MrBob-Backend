@@ -23,4 +23,6 @@ const cancel = catchAsync(async (req, res) => {
 
 const getSummary = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await service.getSummary() }));
 
-module.exports = { create, list, getSummary, getById, cancel };
+const update = catchAsync(async (req, res) => res.status(200).json({ success: true, data: await service.update(req.params.id, req.body) }));
+
+module.exports = { create, list, update, getSummary, getById, cancel };

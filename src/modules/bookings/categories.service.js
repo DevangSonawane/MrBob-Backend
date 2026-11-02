@@ -47,6 +47,16 @@ const create = async (data, files) => {
   return toView(image ? await storeImage(category, image) : category);
 };
 
+const update = async (id, data) => {
+  const category = await find(id);
+  if (!category.isActive) throw ApiError.notFound('Category not found');
+  if (data.name) {
+    const clash = await prisma.serviceCategory.findFirst({ where: { id: { not: id }, isActive: true, name: { equals: data.name, mode: 'insensitive' } } });
+    if (clash) throw ApiError.conflict(`${clash.name} already exists`);
+  }
+  return toView(await prisma.serviceCategory.update({ where: { id }, data }));
+};
+
 const setImage = async (id, files) => {
   const category = await find(id);
   const image = imageFrom(files);
@@ -77,4 +87,4 @@ const openImage = async (id) => {
   return { stream: await storage.getStream(category.imageKey), mimeType: category.imageMime };
 };
 
-module.exports = { remove, list, create, setImage, removeImage, openImage };
+module.exports = { remove, list, create, update, setImage, removeImage, openImage };

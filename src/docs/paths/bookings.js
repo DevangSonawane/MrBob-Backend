@@ -61,6 +61,25 @@ module.exports = {
     },
 
     '/categories/{id}': {
+      patch: op({
+        tag: CATEGORIES,
+        summary: 'Edit a service category',
+        description:
+          'Change the name, tier or base price; only what is sent changes. New bookings use the new price — bookings already made keep theirs. ' +
+          'Returns **409** if another active category has the name (ignoring case). The picture is changed with `PUT /categories/{id}/image`.',
+        access: 'ADMIN',
+        params: [pathParam('id', 'Category id')],
+        body: jsonBody(
+          {
+            type: 'object',
+            minProperties: 1,
+            properties: { name: { type: 'string', minLength: 2, maxLength: 80 }, tier: { type: 'string', enum: ['REPAIR', 'RENOVATION', 'RECURRING'] }, basePrice: { type: 'number', exclusiveMinimum: 0 } },
+          },
+          { basePrice: 399 },
+        ),
+        responses: { 200: ok('The updated category', ref('ServiceCategory')) },
+        errors: [404, 409],
+      }),
       delete: op({
         tag: CATEGORIES,
         summary: 'Remove a service category',
@@ -279,6 +298,57 @@ module.exports = {
         params: [bookingId],
         responses: { 200: ok('The booking', booking, examples.booking('assigned', 'admin')) },
         errors: [403, 404],
+      }),
+      patch: op({
+        tag: ADMIN,
+        summary: 'Edit a booking',
+        description:
+          'Change where the job is, its price, the person on site, or the problem description. Only what is sent changes. The date and time ' +
+          'are changed with **Reschedule**, the status with the status and cancel actions.\n\n' +
+          '- `addressId` moves it to another of the customer\'s saved addresses; `address` to a new one (saved to their addresses). The address ' +
+          'can change until work starts (**409** after). A booking still looking for a vendor starts again from the new place: offers already ' +
+          'sent are withdrawn (vendors who turned it down are not asked again). While the pincode geofence is on, an address outside it is refused ' +
+          '(**400**, `details.code` `PINCODE_NOT_SERVICEABLE`).\n' +
+          '- `price` cannot change on a booking paid online or already paid (**409**).\n' +
+          '- `contactName` / `contactPhone`: `null` or `""` clears them. With a new address they replace the address\'s own contact.\n' +
+          '- `note` (optional) says why, on the timeline.\n\n' +
+          'Completed and cancelled bookings cannot be edited (**409**). Each edit adds an `EDITED` entry to the timeline. The assigned vendor is ' +
+          'notified when the address, contact or description changes, the customer when the address or price does.',
+        access: 'ADMIN',
+        params: [pathParam('id', 'Booking id')],
+        body: jsonBody(
+          {
+            type: 'object',
+            minProperties: 1,
+            properties: {
+              addressId: { type: 'string', format: 'uuid', description: 'One of the customer\'s saved addresses' },
+              address: {
+                type: 'object',
+                description: 'Instead of addressId: a new address, saved to the customer',
+                required: ['line1', 'cityId', 'state', 'pincode'],
+                properties: {
+                  line1: { type: 'string' },
+                  line2: { type: 'string', nullable: true },
+                  landmark: { type: 'string', nullable: true },
+                  cityId: { type: 'string', format: 'uuid' },
+                  zoneId: { type: 'string', format: 'uuid', nullable: true },
+                  state: { type: 'string' },
+                  pincode: { type: 'string', pattern: '^[1-9]\\d{5}$' },
+                  contactName: { type: 'string', nullable: true },
+                  contactPhone: { type: 'string', nullable: true },
+                },
+              },
+              price: { type: 'number', exclusiveMinimum: 0 },
+              description: { type: 'string', minLength: 3, maxLength: 1000 },
+              contactName: { type: 'string', nullable: true, maxLength: 100 },
+              contactPhone: { type: 'string', nullable: true, example: '+919812345678' },
+              note: { type: 'string', maxLength: 500 },
+            },
+          },
+          { price: 449, contactName: 'Meera (tenant)', contactPhone: '+919812345670', note: 'Customer called to add a second tap' },
+        ),
+        responses: { 200: ok('The updated booking, with its timeline', ref('BookingDetail')) },
+        errors: [404, 409],
       }),
       delete: op({
         tag: [ADMIN, SUPER_ADMIN],

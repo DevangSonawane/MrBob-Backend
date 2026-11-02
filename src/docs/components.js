@@ -695,7 +695,7 @@ const schemas = {
           ...arrayOf(
             object({
               id: id(),
-              type: oneOf(['CREATED', 'PAYMENT_RECEIVED', 'STATUS_CHANGED', 'ASSIGNED', 'RESCHEDULED', 'CANCELLED', 'PAYMENT_COLLECTED', 'REFUNDED']),
+              type: oneOf(['CREATED', 'PAYMENT_RECEIVED', 'STATUS_CHANGED', 'ASSIGNED', 'RESCHEDULED', 'CANCELLED', 'PAYMENT_COLLECTED', 'REFUNDED', 'EDITED']),
               actorRole: oneOf(['CUSTOMER', 'PROFESSIONAL', 'ADMIN', 'SYSTEM']),
               fromStatus: nullable(oneOf(BOOKING_STATUSES)),
               toStatus: nullable(oneOf(BOOKING_STATUSES)),

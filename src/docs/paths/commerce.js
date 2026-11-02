@@ -160,6 +160,28 @@ module.exports = {
       }),
     },
     '/amc/{id}': {
+      patch: op({
+        tag: AMC,
+        summary: 'Edit a subscription (team)',
+        description: 'Correct the plan name or dates, or change the status (e.g. mark it expired). **400** if the renewal date is not after the start date.',
+        access: 'ADMIN',
+        params: [subscriptionId],
+        body: jsonBody(
+          {
+            type: 'object',
+            minProperties: 1,
+            properties: {
+              plan: { type: 'string', minLength: 2 },
+              startDate: { type: 'string', format: 'date-time' },
+              renewalDate: { type: 'string', format: 'date-time' },
+              status: { type: 'string', enum: ['ACTIVE', 'EXPIRED', 'CANCELLED'] },
+            },
+          },
+          { renewalDate: '2027-11-03T00:00:00.000Z' },
+        ),
+        responses: { 200: ok('The updated subscription, with its customer', ref('AMCSubscription')) },
+        errors: [404],
+      }),
       get: op({
         tag: AMC,
         summary: 'Get a subscription',
