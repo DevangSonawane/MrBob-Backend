@@ -66,7 +66,7 @@ const pageParams = [
   queryParam('limit', 'Items per page', { type: 'integer', minimum: 1, maximum: 100, default: 20 }),
 ];
 
-const ERROR_RESPONSES = { 400: 'BadRequest', 401: 'Unauthorized', 403: 'Forbidden', 404: 'NotFound', 409: 'Conflict', 503: 'ServiceUnavailable' };
+const ERROR_RESPONSES = { 400: 'BadRequest', 401: 'Unauthorized', 403: 'Forbidden', 404: 'NotFound', 409: 'Conflict', 422: 'Unprocessable', 503: 'ServiceUnavailable' };
 const ACCESS_LABEL = {
   public: 'Public — no token needed.',
   user: 'Any signed-in user.',

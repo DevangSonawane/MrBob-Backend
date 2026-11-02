@@ -4,6 +4,7 @@ const { authenticate, authorize } = require('../../middlewares/auth');
 const controller = require('./bookings.controller');
 const schema = require('./bookings.schema');
 const { getImage: getCompletionImage } = require('../jobs/jobs.routes');
+const { addRoutes: addAssistantRoutes } = require('../assistant/assistant.routes');
 
 const router = Router();
 
@@ -12,6 +13,8 @@ const router = Router();
 
 // The whole booking — service, date & time, problem, address, payment choice — in one call.
 router.post('/', authenticate, authorize('CUSTOMER'), validate(schema.createBooking), controller.create);
+// Before booking: turn the customer's own description of the problem into a draft to confirm.
+addAssistantRoutes(router, authenticate);
 // The same, made by the team from the web dashboard for a customer who called or walked in.
 router.post('/admin', authenticate, authorize('ADMIN'), validate(schema.createForCustomer), controller.createForCustomer);
 

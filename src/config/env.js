@@ -31,6 +31,11 @@ const envSchema = z.object({
 
   GOOGLE_MAPS_API_KEY: z.string().optional(),
 
+  // The booking assistant (modules/assistant): turns a customer's description
+  // of the problem into a booking draft with Claude. Without a key the
+  // assistant answers 503 and the app falls back to picking the service by hand.
+  ANTHROPIC_API_KEY: z.string().optional(),
+
   WHATSAPP_API_TOKEN: z.string().optional(),
   WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
 

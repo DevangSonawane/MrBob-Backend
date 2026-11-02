@@ -935,6 +935,7 @@ const responses = {
   Forbidden: errorResponse('The signed-in account is not allowed to do this', 'You do not have access to this resource'),
   NotFound: errorResponse('The resource does not exist', 'Not found'),
   Conflict: errorResponse('The request conflicts with the current state', 'Your application is under review and cannot be edited'),
+  Unprocessable: errorResponse('The request was understood but could not be carried out', 'We could not work out the booking from that. Choose the service yourself.', { code: 'ASSISTANT_NO_DRAFT' }),
   ServiceUnavailable: errorResponse('A required integration is not configured on the server', 'Document storage is not configured (R2 credentials are missing)'),
 };
 

@@ -19,6 +19,7 @@ full extraction plan (dispatch and payments are the likely first candidates).
 | Logging | Pino |
 | Payments | Razorpay |
 | Notifications | Firebase Cloud Messaging push (HTTP v1; devices register via `POST /users/me/devices`) + WhatsApp Business API (stubbed) |
+| Booking assistant | Claude (`@anthropic-ai/sdk`, model `claude-opus-5-5`): `POST /bookings/draft` turns the customer's own description — typed, or spoken and transcribed on the phone — into a booking draft. Off without `ANTHROPIC_API_KEY` |
 | Local DB | Docker Compose (Postgres) |
 | Deploy (now) | Render (`render.yaml` blueprint) |
 | Deploy (later) | AWS EC2/ECS, per the architecture doc |

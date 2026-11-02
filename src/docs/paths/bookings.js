@@ -206,6 +206,78 @@ module.exports = {
       }),
     },
 
+    '/bookings/draft': {
+      post: op({
+        tag: FLOW,
+        summary: 'Describe the problem, get a booking draft',
+        description:
+          'The customer explains the problem in their own words and the assistant (Claude) works out the booking: which service, a clear ' +
+          'description for the vendor, how urgent it is, and when they want it if they said. **Nothing is booked.** Show the draft, let the customer ' +
+          'confirm the service, time, address and payment, then call **Create a booking** with `categoryId` = `service.id`, ' +
+          '`description` = `description`, and `scheduledAt` = `suggestedScheduledAt` (or the time they pick).\n\n' +
+          '**Typed or spoken:** for voice, use the phone\'s speech-to-text (Android `SpeechRecognizer`, iOS `SFSpeechRecognizer`) and send the text ' +
+          'with `source: "VOICE"`, so the assistant allows for transcription mistakes. Audio is never uploaded.\n\n' +
+          '**`status`**\n' +
+          '- `READY`: a service was chosen. Go to the confirm screen.\n' +
+          '- `NEEDS_INFO`: show `questions` (at most 2) and/or let the customer choose between `service` and `alternatives`. To ask again, send the ' +
+          'same `message` with `answers`.\n' +
+          '- `NOT_OFFERED`: none of our services does this. Say so, and offer the service list.\n\n' +
+          '`urgency` is `EMERGENCY`, `SOON` or `FLEXIBLE`; an emergency gets the earliest bookable slot as `suggestedScheduledAt`. Show `safetyAdvice` ' +
+          'prominently when present (e.g. switch off the mains). `price` is the service\'s base price.\n\n' +
+          '**When it can\'t help** — not switched on, busy, or down — it answers **503** with `details.code` `ASSISTANT_UNAVAILABLE`; if it could not ' +
+          'make sense of the message, **422** with `ASSISTANT_NO_DRAFT`. In both cases fall back to the normal service picker. **429** after 20 ' +
+          'drafts in 10 minutes from one account. A draft usually takes a few seconds: show a spinner.',
+        access: ['CUSTOMER', 'ADMIN'],
+        body: jsonBody(
+          {
+            type: 'object',
+            required: ['message'],
+            properties: {
+              message: { type: 'string', minLength: 3, maxLength: 2000, description: 'What the customer typed, or what the phone heard' },
+              source: { type: 'string', enum: ['TEXT', 'VOICE'], default: 'TEXT' },
+              answers: {
+                type: 'array',
+                maxItems: 4,
+                description: 'Answers to the `questions` of an earlier draft for the same message',
+                items: { type: 'object', required: ['question', 'answer'], properties: { question: { type: 'string' }, answer: { type: 'string' } } },
+              },
+            },
+          },
+          { message: 'the pipe under my kitchen sink is leaking since morning, can someone come tomorrow evening', source: 'VOICE' },
+        ),
+        responses: {
+          200: ok(
+            'The draft',
+            {
+              type: 'object',
+              properties: {
+                status: { type: 'string', enum: ['READY', 'NEEDS_INFO', 'NOT_OFFERED'] },
+                service: { type: 'object', nullable: true, properties: { id: { type: 'string', format: 'uuid' }, name: { type: 'string' }, tier: { type: 'string' }, basePrice: { type: 'number' }, image: { type: 'string', nullable: true } } },
+                alternatives: { type: 'array', items: { type: 'object', properties: { id: { type: 'string', format: 'uuid' }, name: { type: 'string' }, tier: { type: 'string' }, basePrice: { type: 'number' }, image: { type: 'string', nullable: true } } } },
+                description: { type: 'string', description: 'For Create a booking\'s `description`' },
+                urgency: { type: 'string', enum: ['EMERGENCY', 'SOON', 'FLEXIBLE'] },
+                suggestedScheduledAt: { type: 'string', format: 'date-time', nullable: true },
+                questions: { type: 'array', items: { type: 'string' } },
+                safetyAdvice: { type: 'string', nullable: true },
+                price: { type: 'number', nullable: true },
+              },
+            },
+            {
+              status: 'READY',
+              service: { id: '3f2e1d0c-2222-4b3a-8c7d-6e5f4a3b2c1d', name: 'Plumber', tier: 'REPAIR', basePrice: 349, image: null },
+              alternatives: [],
+              description: 'Pipe under the kitchen sink leaking since this morning.',
+              urgency: 'SOON',
+              suggestedScheduledAt: '2026-11-04T12:30:00.000Z',
+              questions: [],
+              safetyAdvice: null,
+              price: 349,
+            },
+          ),
+        },
+        errors: [422, 503],
+      }),
+    },
     '/bookings/admin': {
       post: op({
         tag: [ADMIN, SUPER_ADMIN],
